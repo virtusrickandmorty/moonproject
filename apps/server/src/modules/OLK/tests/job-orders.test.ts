@@ -48,9 +48,10 @@ it("a team list becomes one job order for the coach as a new customer, with the 
   expect(body.customer.name).toBe('Made-up Coach');
   expect(body).toMatchObject({ contact: 'Made-up Coach · +639180000000', notes: 'From the order link "Made-up League jerseys".' });
   expect(body.lines).toEqual([{ itemId: jersey, kind: 'made_to_order', description: 'Team jersey', isSet: false, qty: 3, listCents: 45_000, roster: [
-    { name: 'CRUZ', sizeMode: 'preset', size: 'L', jerseyName: 'CRUZ', jerseyNumber: '7', qty: 1 },
-    { name: 'SANTOS', sizeMode: 'preset', size: 'M', jerseyName: 'SANTOS', jerseyNumber: '10', qty: 1 },
-    { name: 'REYES', sizeMode: 'preset', size: 'M', jerseyName: 'REYES', jerseyNumber: '11', qty: 1 },
+    // Each player is a wearer of the customer too (their own link then shows the job order's status).
+    { personId: expect.any(String), name: 'CRUZ', sizeMode: 'preset', size: 'L', jerseyName: 'CRUZ', jerseyNumber: '7', qty: 1 },
+    { personId: expect.any(String), name: 'SANTOS', sizeMode: 'preset', size: 'M', jerseyName: 'SANTOS', jerseyNumber: '10', qty: 1 },
+    { personId: expect.any(String), name: 'REYES', sizeMode: 'preset', size: 'M', jerseyName: 'REYES', jerseyNumber: '11', qty: 1 },
   ] }]);
   expect(env.db.prepare("SELECT email FROM cus_customers WHERE id = ?").pluck().get(body.customer.id)).toBe('coach@example.test');
   expect(env.db.prepare("SELECT phone FROM cus_customer_phones WHERE customer_id = ?").pluck().get(body.customer.id)).toBe('+639180000000');

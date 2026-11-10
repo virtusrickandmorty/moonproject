@@ -6,7 +6,8 @@
  * is the day the production time starts counting from (Terms: with the downpayment).
  *
  * The link's private part is the key, as with order links (OLK): it shows the job order's items and its due date, never a
- * price, a balance, a phone or an address.
+ * price, a balance, a phone or an address. Once the design is approved, it also shows the order's status with every wearer
+ * (name, size, jersey name and number), so the customer can follow it and spot a wrong name or size.
  */
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -14,7 +15,7 @@ import { AppError, badRequest, conflict, newId, notFound } from '@moonproject/sh
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { checkFile, sha256Hex } from '../../engine/attachments.ts';
-import { jobOrderRef, trackedJobOrder } from '../JO/public.ts';
+import { customerOrderView, jobOrderRef, trackedJobOrder } from '../JO/public.ts';
 
 export const MAX_FILES = 6;
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -98,6 +99,7 @@ export function publicProof(db: Db, token: string) {
     jobOrderNumber: jo?.number ?? p.job_order_no, version: p.version, latestVersion: latest, note: p.note, sentAt: p.created_at, state,
     files: filesOf(db, p.id).map(({ fileNo, fileName, contentType }) => ({ fileNo, fileName, contentType })),
     ...(jo ? { dueDate: jo.dueDate, lines: jo.lines } : {}),
+    ...(jo && answer?.answer === 'approved' ? { order: customerOrderView(db, jo.id) } : {}),
     // The newest design's link, from an older one: whoever holds this link is who the newest is for.
     ...(jo && p.version < latest ? { latestToken: db.prepare('SELECT token FROM prf_proofs WHERE job_order_no = ? AND version = ?').pluck().get(p.job_order_no, latest) as string } : {}),
     answer,

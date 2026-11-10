@@ -2,9 +2,12 @@
  * /p/<link>: the customer's design page (the owner's request, Nov 2026), without signing in. It shows the job order's design
  * (pictures, or a PDF to open), the shop's note, the items and the due date; the customer types their name and taps Approve,
  * or Ask for a change with what to change. Once answered it shows the answer; an older design points to the newest one.
+ * Once approved it leads to the order's status, with every wearer and their size.
  */
 import { useEffect, useState, type ReactNode } from 'react';
+import type { CustomerOrder } from '../../api.ts';
 import { SHOP_CONTACT } from '../../shop/products.ts';
+import { OrderStatus } from '../../shop/OrderStatus.tsx';
 
 export interface PublicProof {
   jobOrderNumber: string; version: number; latestVersion: number; note: string | null; sentAt: string;
@@ -12,6 +15,7 @@ export interface PublicProof {
   files: { fileNo: number; fileName: string; contentType: string }[];
   dueDate?: string; lines?: { description: string; qty: number }[]; latestToken?: string;
   answer: { answer: 'approved' | 'changes'; name: string; comment?: string; at: string } | null;
+  order?: CustomerOrder | null; // once approved: where the order is, with its wearers
 }
 
 const box = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200';
@@ -89,6 +93,7 @@ export function ProofPage({ token }: { token: string }) {
   return (
     <Frame title={`Design for ${proof.jobOrderNumber}`}>
       {proof.answer && <AnswerCard a={proof.answer} fresh={fresh} />}
+      {proof.order && <OrderStatus order={proof.order} />}
       {proof.state === 'replaced' && (
         <p className="rounded-2xl bg-sky-50 p-5 text-sky-900">The shop sent a newer design (version {proof.latestVersion}).{' '}
           {proof.latestToken && <a href={`/p/${proof.latestToken}`} className="font-bold underline">Open the newest design</a>}</p>)}
@@ -108,7 +113,7 @@ export function ProofPage({ token }: { token: string }) {
                 <img src={`${base}/files/${f.fileNo}`} alt={`Design, picture ${f.fileNo}`} className="mx-auto max-h-[70vh] w-auto" /></a>)}
           {proof.files.some((f) => f.contentType !== 'application/pdf') && <p className="text-xs text-slate-500">Tap a picture to see it bigger.</p>}
         </div>
-        {proof.lines && <div>
+        {proof.lines && !proof.order && <div>
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Your order</h3>
           <ul className="mt-2 divide-y divide-slate-100">{proof.lines.map((l, i) => <li key={i} className="flex justify-between gap-3 py-2"><span>{l.description}</span><span className="shrink-0 font-semibold tabular-nums">{l.qty} pcs</span></li>)}</ul>
           {proof.dueDate && <p className="mt-2 text-sm text-slate-600">Due {day(proof.dueDate)}</p>}

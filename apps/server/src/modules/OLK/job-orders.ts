@@ -2,8 +2,8 @@
  * Job orders from an order link (the owner's request, Nov 2026). Staff pick answers and start a job order from them:
  * - together: one job order for the team, or for the whole group (or the answers ticked), for one customer;
  * - alone: one member's own job order (a member who pays for their own, or filled in late), for that member.
- * This finds or makes the customer from the answer's details, makes a wearer with a measurement chart for each person who
- * gave measurements (or is to be measured at the shop), and returns the job order's lines (price list prices, wearers,
+ * This finds or makes the customer from the answer's details, makes a wearer for each person (with a measurement chart
+ * when they gave measurements), so the answer can show the job orders made from it (its order status), and returns the job order's lines (price list prices, wearers,
  * sizes, jersey names and numbers) for the job order form, where staff check them and record it. An item's own length or
  * width goes in that row's notes. A second start reuses the customer's wearers and charts the link made, with a new
  * chart revision only when the answer was changed since.
@@ -89,7 +89,7 @@ export function prepareJobOrder(db: Db, linkId: string, raw: unknown, who: Who &
       const name = l.kind === 'team' ? p.name ?? p.backName ?? `Player ${p.row}` : a.name;
       const jersey = { ...(p.backName ? { jerseyName: p.backName } : {}), ...(p.number ? { jerseyNumber: p.number } : {}) };
       if (it.sizing === 'size' && !pc.customFit) {
-        return [{ name, sizeMode: 'preset', size: pc.size!, ...(item?.unit === 'set' ? { lowerSize: pc.size! } : {}), ...jersey, qty: pc.qty }];
+        return [{ personId: wearerOf(db, a, version, p, l.kind, customer, who), name, sizeMode: 'preset', size: pc.size!, ...(item?.unit === 'set' ? { lowerSize: pc.size! } : {}), ...jersey, qty: pc.qty }];
       }
       const own = p.itemMeasures.filter((m) => m.lineNo === it.lineNo).map((m) => `${label(m.field)} ${m.value} in`);
       const notes = [pc.customFit ? 'Custom fit' : '', p.measureAtShop ? 'Measure at the shop' : own.length ? `For this item: ${own.join(', ')}` : ''].filter(Boolean).join('. ');

@@ -18,6 +18,7 @@ import { AppError, badRequest, conflict, isBusinessDate, newId, notFound } from 
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { catalogItemRef } from '../CAT/public.ts';
+import { customerOrderView, jobOrdersWithWearers, type CustomerOrderView } from '../JO/public.ts';
 import { customerRef, normalizePhone } from '../CUS/public.ts';
 
 /** The measurements a person's chart keeps (CUS), each with its words and how to take it: the measuring guide. */
@@ -213,6 +214,8 @@ export function publicLink(db: Db, token: string, today: string) {
   const sizes = db.prepare("SELECT label, category FROM cus_sizes WHERE is_active = 1 ORDER BY category, rowid").all() as { label: string; category: 'adult' | 'kids' }[];
   return {
     kind: l.kind, title: l.title, closesOn: l.closes_on, open: isOpen(l, today), payOwn: l.pay_own === 1,
+    // The Manila day the shop closed it early (closed_at is a Manila time stamp), else the day it was set to close.
+    closedOn: l.closed_at ? l.closed_at.slice(0, 10) : l.closes_on,
     items: itemsOf(db, l.id).map(({ lineNo, name, sizing, customFit, fields }) => ({ lineNo, name, sizing, customFit, fields })),
     sizes, guide: MEASURES.map(([key, label, how]) => ({ key, label, how })),
   };
@@ -321,6 +324,22 @@ export function myAnswer(db: Db, token: string, key: string) {
   const id = l && responseByKey(db, l, key);
   if (!id) throw notFound('That answer');
   return answerOf(db, id);
+}
+
+/**
+ * The job orders made from an answer, as the person sees them on their own link (the owner's request, Nov 2026): found by
+ * the wearers made for the answer's people, and showing only those wearers (a group member sees their own pieces).
+ */
+export function ordersOf(db: Db, responseId: string): CustomerOrderView[] {
+  const people = db.prepare('SELECT DISTINCT person_id FROM olk_wearers WHERE response_id = ?').pluck().all(responseId) as string[];
+  const mine = new Set(people);
+  const seen = new Set<string>();
+  return jobOrdersWithWearers(db, people).flatMap((id) => {
+    const o = customerOrderView(db, id, mine);
+    if (!o || seen.has(o.number)) return [];
+    seen.add(o.number);
+    return [o];
+  });
 }
 
 /** Changes an answer, until the link closes: the whole answer again, as its next version. */

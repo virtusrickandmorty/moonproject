@@ -11,7 +11,7 @@ interface Tracked {
   pieces: number; fulfilment?: 'pickup' | 'delivery'; deliveryOption?: string | null; lines?: { description: string; qty: number }[];
 }
 /** The steps each kind of order goes through, and where its status sits on them. */
-const STEPS: Record<Tracked['kind'], { steps: string[]; at: Record<string, number> }> = {
+export const STEPS: Record<Tracked['kind'], { steps: string[]; at: Record<string, number> }> = {
   job_order: { steps: ['Order received', 'In production', 'Ready for release', 'Released'], at: { open: 0, in_production: 1, ready: 2, partially_released: 3, released: 3, closed: 3 } },
   online: { steps: ['Order placed', 'Payment sent', 'Paid · being prepared', 'Ready / sent', 'Completed'], at: { awaiting_payment: 0, payment_sent: 1, confirmed: 2, ready: 3, completed: 4 } },
 };

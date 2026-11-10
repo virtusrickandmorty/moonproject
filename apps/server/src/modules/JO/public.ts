@@ -401,3 +401,39 @@ export function trackedJobOrder(db: Db, number: string): {
     balanceDueCents: joMoney(db, jo.id).balanceDueCents,
   };
 }
+
+/**
+ * A job order as its customer sees it on their private links (the owner's request, Nov 2026): after a design is approved
+ * (PRF) and once a job order is made from an order link answer (OLK). The stage, dates and each item with its wearers:
+ * name, size (or made to their measurements), jersey name and number. Never a price, a balance or a contact detail. With
+ * `people`, only those wearers' rows (a group member sees their own, not the whole group's). Follows an edited job order to
+ * the copy that stands; null when it was cancelled, or none of those wearers are on it.
+ */
+export function customerOrderView(db: Db, jobOrderId: string, people?: ReadonlySet<string>) {
+  const number = db.prepare(`SELECT number FROM documents WHERE id = ? AND ${JO_DOC_TYPES_SQL}`).pluck().get(jobOrderId) as string | undefined;
+  const jo = number ? trackedJobOrder(db, number) : null;
+  if (!jo) return null;
+  const rows = db.prepare(`SELECT line_no AS lineNo, person_id AS personId, wearer_name AS name, size_mode AS sizeMode, size, lower_size AS lowerSize,
+      jersey_name AS jerseyName, jersey_number AS jerseyNumber, qty FROM jo_roster WHERE document_id = ? ORDER BY line_no, row_no`).all(jo.id) as
+    { lineNo: number; personId: string | null; name: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }[];
+  const lines = (db.prepare('SELECT line_no AS lineNo, description, qty FROM jo_lines WHERE document_id = ? ORDER BY line_no').all(jo.id) as { lineNo: number; description: string; qty: number }[])
+    .map((l) => {
+      const wearers = rows.filter((r) => r.lineNo === l.lineNo && (!people || (r.personId !== null && people.has(r.personId)))).map((r) => ({
+        name: r.name, measured: r.sizeMode === 'measured', qty: r.qty,
+        ...(r.size ? { size: r.lowerSize && r.lowerSize !== r.size ? `${r.size} / ${r.lowerSize}` : r.size } : {}),
+        ...(r.jerseyName ? { jerseyName: r.jerseyName } : {}), ...(r.jerseyNumber ? { jerseyNumber: r.jerseyNumber } : {}),
+      }));
+      return { description: l.description, qty: people ? wearers.reduce((n, w) => n + w.qty, 0) : l.qty, wearers };
+    })
+    .filter((l) => !people || l.wearers.length > 0);
+  if (people && !lines.length) return null;
+  return { number: jo.number, stage: jo.stage, stageLabel: jo.stageLabel, placedAt: jo.businessDate, dueDate: jo.dueDate, lines };
+}
+export type CustomerOrderView = NonNullable<ReturnType<typeof customerOrderView>>;
+
+/** The recorded job orders that have any of these wearers on them (OLK: the job orders made from an answer). */
+export function jobOrdersWithWearers(db: Db, people: readonly string[]): string[] {
+  if (!people.length) return [];
+  return db.prepare(`SELECT DISTINCT r.document_id FROM jo_roster r JOIN documents d ON d.id = r.document_id
+    WHERE d.status = 'posted' AND r.person_id IN (SELECT value FROM json_each(?)) ORDER BY d.business_date, d.number`).pluck().all(JSON.stringify(people)) as string[];
+}
