@@ -1,6 +1,7 @@
 /**
  * /l/<link>: the page an order link opens (the owner's request, Nov 2026), without signing in. A team list: the coach gives
- * their details and every player (name on the back, number, gender, a size or measurements per item). A group order: each
+ * their details and every player (name on the back, number, gender, a size or measurements per item; an item in sizes may
+ * also offer "Custom fit", the person's own measurements instead of a size). A group order: each
  * member gives their own details and pieces. Measurements follow the shop's measuring guide; an item that needs the same
  * measurement reuses the person's value, which may be changed for that item alone. Sent answers can be changed with their
  * own link until the link closes. Only that key is kept in this browser, never the answer itself (NR-11).
@@ -44,20 +45,25 @@ export function inchesOf(text: string): number | null {
   return n > 0 && n <= 300 && Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
 }
 
+/** The size list's choice for a custom fit: the person's own measurements instead of a size. */
+export const CUSTOM = '*custom';
+/** Whether this person's piece of this item is made to their measurements: a made-to-measure item, or a custom fit. */
+export const measuredPiece = (it: OlkItem, p: PersonForm) => Number(p.pieces[it.lineNo]?.qty) > 0 && (it.sizing === 'measure' || (!!it.customFit && p.pieces[it.lineNo]?.size === CUSTOM));
+
 const blankPerson = (row: number, items: OlkItem[], gender: OlkGender | '' = ''): PersonForm => ({
   row, name: '', backName: '', number: '', gender, measureAtShop: false, measures: {}, own: {},
   pieces: Object.fromEntries(items.map((it) => [it.lineNo, { qty: '1', size: '' }])),
 });
 const personFrom = (p: OlkPerson, items: OlkItem[]): PersonForm => ({
   row: p.row, name: p.name ?? '', backName: p.backName ?? '', number: p.number ?? '', gender: p.gender, measureAtShop: p.measureAtShop,
-  pieces: Object.fromEntries(items.map((it) => { const pc = p.pieces.find((x) => x.lineNo === it.lineNo); return [it.lineNo, { qty: pc ? String(pc.qty) : '0', size: pc?.size ?? '' }]; })),
+  pieces: Object.fromEntries(items.map((it) => { const pc = p.pieces.find((x) => x.lineNo === it.lineNo); return [it.lineNo, { qty: pc ? String(pc.qty) : '0', size: pc?.customFit ? CUSTOM : pc?.size ?? '' }]; })),
   measures: Object.fromEntries(Object.entries(p.measures).map(([k, v]) => [k, String(v)])),
   own: Object.fromEntries(p.itemMeasures.map((m) => [`${m.lineNo}:${m.field}`, String(m.value)])),
 });
 
-/** The measurements this person's made-to-measure pieces need, in the guide's order. */
+/** The measurements this person's made-to-measure and custom-fit pieces need, in the guide's order. */
 function fieldsFor(p: PersonForm, items: OlkItem[], guide: OlkGuide[]): OlkGuide[] {
-  const need = new Set(items.filter((it) => it.sizing === 'measure' && Number(p.pieces[it.lineNo]?.qty) > 0).flatMap((it) => it.fields));
+  const need = new Set(items.filter((it) => measuredPiece(it, p)).flatMap((it) => it.fields));
   return guide.filter((g) => need.has(g.key));
 }
 
@@ -82,7 +88,8 @@ function toAnswer(link: LinkPage, d: Details, people: PersonForm[]): { body: unk
       if (!pc.qty.trim() || qty === 0) continue;
       if (!Number.isInteger(qty) || qty < 0 || qty > 100) return { problem: `${who}: type how many ${it.name} (0 to 100).` };
       if (it.sizing === 'size' && !pc.size) return { problem: `${who}: pick the size for ${it.name}.` };
-      pieces.push({ lineNo: it.lineNo, qty, ...(it.sizing === 'size' ? { size: pc.size } : {}) });
+      const custom = it.sizing === 'size' && !!it.customFit && pc.size === CUSTOM;
+      pieces.push({ lineNo: it.lineNo, qty, ...(custom ? { customFit: true } : it.sizing === 'size' ? { size: pc.size } : {}) });
     }
     if (!pieces.length) return { problem: `${who}: at least one piece.` };
     const measures: Record<string, number> = {};
@@ -297,18 +304,20 @@ function Pieces({ link, person, gender, onChange }: { link: LinkPage; person: Pe
           <div key={it.lineNo} className="flex flex-wrap items-end gap-3 py-3">
             <div className="min-w-0 flex-1 basis-40">
               <p className="font-semibold">{it.name}</p>
-              <p className="text-xs text-slate-500">{it.sizing === 'size' ? `Standard size${cut ? `, ${cut} cut` : ''}` : 'Made to your measurements'}</p>
+              <p className="text-xs text-slate-500">{it.sizing === 'size' && pc.size !== CUSTOM ? `Standard size${cut ? `, ${cut} cut` : ''}${it.customFit ? ', or a custom fit' : ''}`
+                : pc.size === CUSTOM ? 'Custom fit: made to your measurements below' : 'Made to your measurements'}</p>
               {link.prices && ((each) => <p className="text-sm font-semibold text-slate-700">{each === null ? 'Price from the shop' : `${formatPeso(each)} each`}</p>)(priceFor(link.prices.find((x) => x.lineNo === it.lineNo)?.tiers, Number(pc.qty) || 1))}
             </div>
             <label className="w-20"><span className="text-xs text-slate-500">How many</span>
               <input className={box} inputMode="numeric" value={pc.qty} onChange={(e) => set({ qty: e.target.value.replace(/\D/g, '').slice(0, 3) })} aria-label={`How many ${it.name}`} /></label>
             {it.sizing === 'size' && (
-              <label className="w-32"><span className="text-xs text-slate-500">Size</span>
+              <label className={it.customFit ? 'w-full sm:w-60' : 'w-32'}><span className="text-xs text-slate-500">Size</span>
                 <select className={box} value={pc.size} onChange={(e) => set({ size: e.target.value })} disabled={pc.qty === '0' || !pc.qty} aria-label={`Size of ${it.name}`}>
                   <option value="">Pick…</option>
                   {(['adult', 'kids'] as const).map((c) => link.sizes.some((s) => s.category === c) && (
                     <optgroup key={c} label={c === 'adult' ? 'Adult' : 'Kids'}>{link.sizes.filter((s) => s.category === c).map((s) => <option key={s.label} value={s.label}>{s.label}</option>)}</optgroup>
                   ))}
+                  {it.customFit && <option value={CUSTOM}>Custom fit (my measurements)</option>}
                 </select></label>
             )}
           </div>
@@ -321,7 +330,7 @@ function Pieces({ link, person, gender, onChange }: { link: LinkPage; person: Pe
 /** The person's measurements, each once; under each made-to-measure item, the same values, which may differ for that item. */
 function Measurements({ link, person, onChange }: { link: LinkPage; person: PersonForm; onChange: (c: Partial<PersonForm>) => void }) {
   const fields = fieldsFor(person, link.items, link.guide);
-  const items = link.items.filter((it) => it.sizing === 'measure' && Number(person.pieces[it.lineNo]?.qty) > 0);
+  const items = link.items.filter((it) => measuredPiece(it, person));
   const [openItems, setOpenItems] = useState<number[]>(() => [...new Set(Object.keys(person.own).map((k) => Number(k.split(':')[0])))]);
   const [help, setHelp] = useState<string | null>(null);
   const byKey = useMemo(() => new Map(link.guide.map((g) => [g.key, g])), [link.guide]);
@@ -400,7 +409,7 @@ function Summary({ link, answer }: { link: LinkPage; answer: OlkAnswer }) {
       {answer.people.map((p) => (
         <li key={p.row} className="py-3">
           {link.kind === 'team' && <p className="font-semibold">{p.number ? `#${p.number} ` : ''}{p.backName}</p>}
-          <p className="text-slate-600">{p.pieces.map((pc) => `${pc.qty} × ${name(pc.lineNo)}${pc.size ? ` (${pc.size})` : ''}`).join(', ')}{p.measureAtShop ? ' · to measure at the shop' : ''}</p>
+          <p className="text-slate-600">{p.pieces.map((pc) => `${pc.qty} × ${name(pc.lineNo)}${pc.size ? ` (${pc.size})` : pc.customFit ? ' (custom fit)' : ''}`).join(', ')}{p.measureAtShop ? ' · to measure at the shop' : ''}</p>
         </li>
       ))}
     </ul>

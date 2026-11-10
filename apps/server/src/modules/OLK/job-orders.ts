@@ -88,11 +88,11 @@ export function prepareJobOrder(db: Db, linkId: string, raw: unknown, who: Who &
       if (!pc) return [];
       const name = l.kind === 'team' ? p.name ?? p.backName ?? `Player ${p.row}` : a.name;
       const jersey = { ...(p.backName ? { jerseyName: p.backName } : {}), ...(p.number ? { jerseyNumber: p.number } : {}) };
-      if (it.sizing === 'size') {
+      if (it.sizing === 'size' && !pc.customFit) {
         return [{ name, sizeMode: 'preset', size: pc.size!, ...(item?.unit === 'set' ? { lowerSize: pc.size! } : {}), ...jersey, qty: pc.qty }];
       }
       const own = p.itemMeasures.filter((m) => m.lineNo === it.lineNo).map((m) => `${label(m.field)} ${m.value} in`);
-      const notes = p.measureAtShop ? 'Measure at the shop' : own.length ? `For this item: ${own.join(', ')}` : '';
+      const notes = [pc.customFit ? 'Custom fit' : '', p.measureAtShop ? 'Measure at the shop' : own.length ? `For this item: ${own.join(', ')}` : ''].filter(Boolean).join('. ');
       return [{ personId: wearerOf(db, a, version, p, l.kind, customer, who), name, sizeMode: 'measured', ...jersey, qty: pc.qty, ...(notes ? { notes: cut(notes, 200) } : {}) }];
     }));
     if (!roster.length) return [];

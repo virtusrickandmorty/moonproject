@@ -28,6 +28,7 @@ import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 import { answersSince, proofsWaiting } from '../PRF/public.ts';
 import { lowRatingsSince } from '../FBK/public.ts';
+import { customFitsSince } from '../OLK/public.ts';
 import { lastWeek } from '../RPT/public.ts';
 
 /** What the owner is told about for 14 days: actions that need a fresh password, in words (the audit log has the rest). */
@@ -289,6 +290,13 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   if (can('fbk.view')) for (const r of lowRatingsSince(db, manilaTimestamp(new Date(clock.now().getTime() - 7 * 86_400_000)))) {
     push('rating-low', r.id, `${r.jobOrderNumber}: ${r.name || 'the customer'} rated it ${r.stars} ${r.stars === 1 ? 'star' : 'stars'}: call them`,
       `/docs/jo.job_order/${r.jobOrderId}`, r.comment ? `“${r.comment.slice(0, 140)}”` : undefined);
+  }
+  // A custom fit chosen on an order link (the owner's request, Nov 2026), for a week: check the measurements, or book the
+  // fitting. A changed answer comes up again.
+  if (can('olk.view')) for (const f of customFitsSince(db, manilaTimestamp(new Date(clock.now().getTime() - 7 * 86_400_000)))) {
+    const who = f.kind === 'team' ? `${f.name} (${f.people} ${f.people === 1 ? 'player' : 'players'})` : f.name;
+    push('olk-custom-fit', `${f.id}:${f.version}`, `Custom fit on "${f.title}": ${who}`, `/olk?open=${f.linkId}`,
+      `${f.items.join(', ')} · ${f.atShop ? 'to measure at the shop' : 'measurements given: check them'}`);
   }
   // Work waiting on someone, and work done that someone must take on (the owner's request, Oct 2026). Each notice goes by
   // itself once it is dealt with.

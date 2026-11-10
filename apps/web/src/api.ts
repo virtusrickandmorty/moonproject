@@ -474,10 +474,11 @@ export type EstSheets = { costs: true; sheets: EstCosting[]; rules: EstRules } |
 /** Order links (OLK): a private link a customer fills in, a team list or a group order, before the job order is made. */
 export type OlkKind = 'team' | 'group';
 export type OlkGender = 'female' | 'male';
-export interface OlkItem { lineNo: number; itemId?: string; name: string; sizing: 'size' | 'measure'; fields: string[] }
+/** customFit: a standard-size item that also lets a person pick "Custom fit" and give the measurements in fields instead. */
+export interface OlkItem { lineNo: number; itemId?: string; name: string; sizing: 'size' | 'measure'; customFit?: boolean; fields: string[] }
 export interface OlkPerson {
   row: number; name?: string; backName?: string; number?: string; gender: OlkGender; measureAtShop: boolean;
-  pieces: { lineNo: number; qty: number; size?: string }[]; measures: Record<string, number>; itemMeasures: { lineNo: number; field: string; value: number }[];
+  pieces: { lineNo: number; qty: number; size?: string; customFit?: boolean }[]; measures: Record<string, number>; itemMeasures: { lineNo: number; field: string; value: number }[];
 }
 export interface OlkAnswer { id: string; name: string; gender: OlkGender; mobile: string; email: string; address: string; createdAt: string; updatedAt: string; changes: number; people: OlkPerson[] }
 /** A member's share when each pays their own: their pieces at the price for their quantity (total null: an item has no price). */
@@ -500,7 +501,7 @@ export interface OlkJobOrder {
   lines: { itemId: string; kind: 'made_to_order' | 'service' | 'ready_made'; description: string; isSet: boolean; qty: number; listCents: number | null;
     roster: { personId?: string; name: string; sizeMode: 'preset' | 'measured'; size?: string; lowerSize?: string; jerseyName?: string; jerseyNumber?: string; qty: number; notes?: string }[] }[];
 }
-export interface OlkLinkInput { kind: OlkKind; title: string; customerId?: string; closesOn: string; payOwn: boolean; items: { itemId: string; sizing: 'size' | 'measure'; fields: string[] }[] }
+export interface OlkLinkInput { kind: OlkKind; title: string; customerId?: string; closesOn: string; payOwn: boolean; items: { itemId: string; sizing: 'size' | 'measure'; customFit: boolean; fields: string[] }[] }
 export interface EstItem { code: string; name: string; class: string; unit: 'pc' | 'set'; isActive: boolean }
 
 /** A Production worker sign-in for the floor app, and the employee it is linked to now. */
