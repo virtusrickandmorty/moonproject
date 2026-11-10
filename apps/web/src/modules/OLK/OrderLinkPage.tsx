@@ -7,18 +7,20 @@
  * own link until the link closes. Only that key is kept in this browser, never the answer itself (NR-11).
  * A group link where each member pays their own share shows the prices, the member's share, and the shop's QR code to pay
  * it and send the reference and a screenshot; the page then shows whether the shop received it.
+ * Once the shop makes the job order from an answer, the person's own link shows its status, with their wearers and sizes.
  */
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
-import type { OlkAnswer, OlkGender, OlkGuide, OlkItem, OlkKind, OlkPayHow, OlkPayment, OlkPerson, OlkShare } from '../../api.ts';
+import type { CustomerOrder, OlkAnswer, OlkGender, OlkGuide, OlkItem, OlkKind, OlkPayHow, OlkPayment, OlkPerson, OlkShare } from '../../api.ts';
 import { SHOP_CONTACT } from '../../shop/products.ts';
 import { base64, prepare } from '../../shop/Support.tsx';
+import { OrderStatus } from '../../shop/OrderStatus.tsx';
 
 interface LinkPage {
-  kind: OlkKind; title: string; closesOn: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
+  kind: OlkKind; title: string; closesOn: string; closedOn?: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
   prices?: { lineNo: number; tiers: { fromQty: number; unitPriceCents: number }[] }[]; pay?: OlkPayHow | null; // each pays their own share
 }
-type Mine = OlkAnswer & { share?: OlkShare; payments?: OlkPayment[] };
+type Mine = OlkAnswer & { share?: OlkShare; payments?: OlkPayment[]; orders?: CustomerOrder[] };
 /** The price each for this many: the largest tier reached; null when the item has no price on the list. */
 export function priceFor(tiers: { fromQty: number; unitPriceCents: number }[] | undefined, qty: number): number | null {
   const t = (tiers ?? []).filter((x) => x.fromQty <= Math.max(1, qty)).at(-1);
@@ -187,6 +189,8 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
 
   if (sent) return (
     <Frame title={link.title}>
+      {!fresh && sent.orders?.map((o) => <OrderStatus key={o.number} order={o} />)}
+      {!link.open && !sent.orders?.length && <p className="rounded-2xl bg-indigo-50 p-5 text-indigo-900">The shop is making your job order from these details. Open this link again to see where your order is.</p>}
       <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5" aria-live="polite">
         {fresh ? <>
           <p className="text-2xl font-extrabold text-emerald-700">Thank you, {sent.name.split(' ')[0]}!</p>
@@ -195,7 +199,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
         <Summary link={link} answer={sent} />
         {link.open && personal && <KeepLink url={personal} closesOn={link.closesOn} />}
         {link.open && <button type="button" className="w-full rounded-full bg-slate-100 py-3 font-semibold text-slate-800 hover:bg-slate-200" onClick={() => { setSent(null); setFresh(false); }}>Change my answer</button>}
-        {!link.open && <p className="text-sm text-slate-600">This link closed on {day(link.closesOn)}. To change anything, call or text the shop at {SHOP_CONTACT.phone}.</p>}
+        {!link.open && <p className="text-sm text-slate-600">This link closed on {day(link.closedOn ?? link.closesOn)}. To change anything, call or text the shop at {SHOP_CONTACT.phone}.</p>}
       </section>
       {link.payOwn && sent.share && <PayCard pay={link.pay ?? null} share={sent.share} payments={sent.payments ?? []} url={`${base}/answers/${encodeURIComponent(key)}/payment`} onSent={setSent} />}
     </Frame>
@@ -203,7 +207,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
 
   if (!link.open) return (
     <Frame title={link.title}>
-      <p className="rounded-2xl bg-amber-50 p-5 text-amber-900">This link closed on {day(link.closesOn)}. To add or change anything, call or text the shop at {SHOP_CONTACT.phone}.</p>
+      <p className="rounded-2xl bg-amber-50 p-5 text-amber-900">This link closed on {day(link.closedOn ?? link.closesOn)}. To add or change anything, call or text the shop at {SHOP_CONTACT.phone}.</p>
     </Frame>
   );
 

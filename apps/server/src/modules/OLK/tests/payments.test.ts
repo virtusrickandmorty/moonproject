@@ -58,7 +58,8 @@ it('a member paying their own share sees the price, pays with the QR code, and s
   // Not on a job order yet: nothing to collect on. Then the member's own job order is made and recorded.
   expect((await owner.get(`/api/olk/payments/${pay.id}/job-orders`)).json()).toEqual([]);
   const p = (await owner.post(`/api/olk/links/${link.id}/job-order`, { responseIds: [sent.id], together: false })).json();
-  const lines = p.lines.map((l: { kind: string; description: string; qty: number; listCents: number; roster: { name: string }[] }) => ({ kind: l.kind, description: l.description, qty: l.qty, unitPriceCents: l.listCents, discountCents: 0, roster: l.roster }));
+  const lines = p.lines.map((l: { kind: string; description: string; qty: number; listCents: number; roster: { name: string }[] }) => ({ kind: l.kind, description: l.description, qty: l.qty, unitPriceCents: l.listCents, discountCents: 0,
+    roster: l.roster.map(({ name, ...r }: { name: string; personId?: string }) => (r.personId ? r : { name, ...r })) })); // as the form sends it: a wearer, or a one-off name
   const jo = await owner.post('/api/docs/jo.job_order/post', { input: { customerId: p.customer.id, dueInDays: 15, priority: 'normal', paymentTerms: 'dp50', notes: p.notes, lines }, expectedTotalCents: 215_000 }, idem());
   expect(jo.statusCode, jo.body).toBe(200);
   expect((await owner.get(`/api/olk/payments/${pay.id}/job-orders`)).json()).toMatchObject([{ id: jo.json().id, number: jo.json().number, totalCents: 215_000 }]);

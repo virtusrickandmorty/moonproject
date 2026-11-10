@@ -472,6 +472,11 @@ export interface EstPrices { itemId: string; itemName: string; unit: 'pc' | 'set
 export type EstSheets = { costs: true; sheets: EstCosting[]; rules: EstRules } | { costs: false; sheets: EstPrices[] };
 
 /** Order links (OLK): a private link a customer fills in, a team list or a group order, before the job order is made. */
+/** A job order as its customer sees it on their private links (order link, design proof): no prices. */
+export interface CustomerOrder {
+  number: string; stage: string; stageLabel: string; placedAt: string; dueDate: string;
+  lines: { description: string; qty: number; wearers: { name: string; measured: boolean; qty: number; size?: string; jerseyName?: string; jerseyNumber?: string }[] }[];
+}
 export type OlkKind = 'team' | 'group';
 export type OlkGender = 'female' | 'male';
 /** customFit: a standard-size item that also lets a person pick "Custom fit" and give the measurements in fields instead. */

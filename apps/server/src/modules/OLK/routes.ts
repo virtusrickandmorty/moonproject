@@ -9,7 +9,7 @@ import { searchCatalogItems } from '../CAT/public.ts';
 import { searchCustomers } from '../CUS/public.ts';
 import { prepareJobOrder } from './job-orders.ts';
 import { MAX_PROOF_BYTES, acceptPayment, b64, jobOrdersFor, linkPay, memberPay, paymentNotReceived, paymentPicture, sendPayment, staffPay } from './payments.ts';
-import { MEASURES, MEASURE_PRESETS, changeAnswer, closeLink, createLink, linkDetail, listLinks, myAnswer, publicLink, setClosingDate, submitAnswer } from './links.ts';
+import { MEASURES, MEASURE_PRESETS, changeAnswer, closeLink, createLink, linkDetail, listLinks, myAnswer, ordersOf, publicLink, setClosingDate, submitAnswer } from './links.ts';
 
 const noStore = (reply: FastifyReply) => reply.header('Cache-Control', 'no-store');
 
@@ -60,7 +60,7 @@ export function olkRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Params: { token: string; key: string } }>('/api/olk/l/:token/answers/:key', { config: { permission: 'public' } }, async (req, reply) => {
     noStore(reply);
     const a = myAnswer(db, req.params.token, req.params.key);
-    return { ...a, ...memberPay(db, req.params.token, a, today(clock)) };
+    return { ...a, ...memberPay(db, req.params.token, a, today(clock)), orders: ordersOf(db, a.id) };
   });
   app.put<{ Params: { token: string; key: string } }>('/api/olk/l/:token/answers/:key', { bodyLimit: 256 * 1024, config: { permission: 'public' } }, async (req, reply) => {
     noStore(reply);
