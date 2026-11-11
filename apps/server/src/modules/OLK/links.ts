@@ -281,7 +281,7 @@ export function publicLink(db: Db, token: string, today: string) {
 }
 
 const inches = z.number().positive().max(300).refine((n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, 'Use at most two decimals.');
-const personInput = z.object({
+export const personInput = z.object({
   row: z.number().int().min(0).max(500),
   name: text(1, 120).optional(),
   backName: text(1, 40).optional(),
@@ -301,8 +301,40 @@ export const answerInput = z.object({
   email: text(5, 200),
   address: text(5, 300),
   people: z.array(personInput).min(1).max(500),
+  // A coach sending a list the players filled in: the coach's key and the players' rows on it (team.ts stamps them).
+  team: z.object({ key: z.string().min(10).max(100), entries: z.array(z.uuid()).max(500) }).strict().optional(),
 }).strict();
 type AnswerInput = z.infer<typeof answerInput>;
+
+export type PersonInput = z.infer<typeof personInput>;
+/** The items of a link by line, and the shop's active sizes: what a person's pieces are checked against. */
+export const checkingOf = (db: Db, linkId: string) => ({
+  items: new Map(itemsOf(db, linkId).map((it) => [it.lineNo, it])),
+  sizes: new Set(db.prepare('SELECT label FROM cus_sizes WHERE is_active = 1').pluck().all() as string[]),
+});
+/** Checks one person of an answer (or a player's own entry on a team list) against the link's items and sizes. */
+export function checkPerson(kind: 'team' | 'group', items: ReturnType<typeof checkingOf>['items'], sizes: Set<string>, p: PersonInput) {
+  const l = { kind };
+  const who = l.kind === 'team' ? `Player ${p.backName ?? p.row}` : 'Your order';
+  if (l.kind === 'team' && !p.backName) throw badRequest('BACK_NAME', `Player ${p.row}: type the name on the back.`);
+  for (const pc of p.pieces) {
+    const it = items.get(pc.lineNo);
+    if (!it) throw badRequest('ITEM', `${who}: that item is not on this order.`);
+    if (pc.customFit && (it.sizing !== 'size' || !it.customFit)) throw badRequest('CUSTOM_FIT', `${who}: ${it.name} has no custom fit. Pick a size.`);
+    if (pc.customFit && pc.size) throw badRequest('CUSTOM_FIT', `${who}: ${it.name} is a custom fit or a size, not both.`);
+    if (it.sizing === 'size' && !pc.customFit && (!pc.size || !sizes.has(pc.size))) throw badRequest('SIZE', `${who}: pick a size for ${it.name}.`);
+    if (pc.lowerSize !== undefined) {
+      if (!it.isSet || it.sizing !== 'size' || pc.customFit) throw badRequest('LOWER_SIZE', `${who}: ${it.name} has one size, not a top and a lower size.`);
+      if (!sizes.has(pc.lowerSize)) throw badRequest('SIZE', `${who}: pick the lower size for ${it.name}.`);
+    }
+    if ((it.sizing === 'measure' || pc.customFit) && !p.measureAtShop) {
+      const own = p.measures as Partial<Record<Measure, number>>;
+      const missing = it.fields.filter((f) => own[f] === undefined && !p.itemMeasures.some((m) => m.lineNo === it.lineNo && m.field === f));
+      if (missing.length) throw badRequest('MEASURES', `${who}: type ${missing.map((f) => MEASURES.find((m) => m[0] === f)![1].toLowerCase()).join(', ')} for ${it.name}, or tick "measure me at the shop".`);
+    }
+  }
+  if (new Set(p.pieces.map((pc) => pc.lineNo)).size !== p.pieces.length) throw badRequest('ITEM', `${who}: each item once.`);
+}
 
 /** Checks an answer against its link: the right people, items it has, a size from the list, every measurement it needs. */
 function checked(db: Db, l: LinkRow, raw: unknown): AnswerInput & { mobile: string } {
@@ -320,27 +352,7 @@ function checked(db: Db, l: LinkRow, raw: unknown): AnswerInput & { mobile: stri
   if (l.kind === 'group' && (v.people.length !== 1 || v.people[0]!.row !== 0)) throw badRequest('PEOPLE', 'A group order answer is for one person: you.');
   if (l.kind === 'team' && v.people.some((p) => p.row === 0)) throw badRequest('PEOPLE', 'Number the players from 1.');
   if (new Set(v.people.map((p) => p.row)).size !== v.people.length) throw badRequest('PEOPLE', 'Each player once.');
-  for (const p of v.people) {
-    const who = l.kind === 'team' ? `Player ${p.backName ?? p.row}` : 'Your order';
-    if (l.kind === 'team' && !p.backName) throw badRequest('BACK_NAME', `Player ${p.row}: type the name on the back.`);
-    for (const pc of p.pieces) {
-      const it = items.get(pc.lineNo);
-      if (!it) throw badRequest('ITEM', `${who}: that item is not on this order.`);
-      if (pc.customFit && (it.sizing !== 'size' || !it.customFit)) throw badRequest('CUSTOM_FIT', `${who}: ${it.name} has no custom fit. Pick a size.`);
-      if (pc.customFit && pc.size) throw badRequest('CUSTOM_FIT', `${who}: ${it.name} is a custom fit or a size, not both.`);
-      if (it.sizing === 'size' && !pc.customFit && (!pc.size || !sizes.has(pc.size))) throw badRequest('SIZE', `${who}: pick a size for ${it.name}.`);
-      if (pc.lowerSize !== undefined) {
-        if (!it.isSet || it.sizing !== 'size' || pc.customFit) throw badRequest('LOWER_SIZE', `${who}: ${it.name} has one size, not a top and a lower size.`);
-        if (!sizes.has(pc.lowerSize)) throw badRequest('SIZE', `${who}: pick the lower size for ${it.name}.`);
-      }
-      if ((it.sizing === 'measure' || pc.customFit) && !p.measureAtShop) {
-        const own = p.measures as Partial<Record<Measure, number>>;
-        const missing = it.fields.filter((f) => own[f] === undefined && !p.itemMeasures.some((m) => m.lineNo === it.lineNo && m.field === f));
-        if (missing.length) throw badRequest('MEASURES', `${who}: type ${missing.map((f) => MEASURES.find((m) => m[0] === f)![1].toLowerCase()).join(', ')} for ${it.name}, or tick "measure me at the shop".`);
-      }
-    }
-    if (new Set(p.pieces.map((pc) => pc.lineNo)).size !== p.pieces.length) throw badRequest('ITEM', `${who}: each item once.`);
-  }
+  for (const p of v.people) checkPerson(l.kind, items, sizes, p);
   return { ...v, mobile };
 }
 

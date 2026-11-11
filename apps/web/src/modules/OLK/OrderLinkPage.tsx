@@ -12,7 +12,8 @@
  * a bar at the bottom of a phone that opens the whole summary. It counts the players, each item's pieces by size, the sizes
  * still to pick, and a member's own share. A team's coach may list the players in Excel instead (TeamSheet.tsx).
  * A set (top and lower) may be one size on top and another below; the shop's note and pictures of the design show at the
- * top (the owner's request, Nov 2026).
+ * top (the owner's request, Nov 2026). On a team list the players may fill in their own rows for the coach, who alone sends
+ * the list (TeamPlayers.tsx; a player's page is /l/<link>?p=<players' link>).
  */
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
@@ -21,6 +22,7 @@ import { SHOP_CONTACT } from '../../shop/products.ts';
 import { base64, prepare } from '../../shop/Support.tsx';
 import { OrderStatus, pcs, sizeWords } from '../../shop/OrderStatus.tsx';
 import { TeamSheet } from './TeamSheet.tsx';
+import { PlayerPage, PlayersLinkCard, coachKeyOf, mergeEntries, useTeamList, type TeamList } from './TeamPlayers.tsx';
 
 export interface LinkPage {
   kind: OlkKind; title: string; closesOn: string; closedOn?: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
@@ -37,10 +39,12 @@ export interface PersonForm {
   row: number; name: string; backName: string; number: string; gender: OlkGender | ''; measureAtShop: boolean;
   // lower: a set's lower size when it differs from the top ('' is the same as the top)
   pieces: Record<number, { qty: string; size: string; lower?: string }>; measures: Record<string, string>; own: Record<string, string>; // own: `${lineNo}:${field}` for one item
+  /** A card a player filled in for the coach (TeamPlayers.tsx): their row's id and when they last changed it. */
+  entry?: { id: string; at: string };
 }
 interface Details { name: string; gender: OlkGender | ''; mobile: string; email: string; address: string }
 
-const box = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200';
+export const box = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200';
 const day = (d: string) => new Date(`${d}T00:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', weekday: 'short', month: 'long', day: 'numeric' });
 const keyStore = (token: string) => `olk:${token}`;
 const readKey = (token: string) => { try { return localStorage.getItem(keyStore(token)) ?? ''; } catch { return ''; } };
@@ -60,11 +64,11 @@ export const CUSTOM = '*custom';
 /** Whether this person's piece of this item is made to their measurements: a made-to-measure item, or a custom fit. */
 export const measuredPiece = (it: OlkItem, p: PersonForm) => Number(p.pieces[it.lineNo]?.qty) > 0 && (it.sizing === 'measure' || (!!it.customFit && p.pieces[it.lineNo]?.size === CUSTOM));
 
-const blankPerson = (row: number, items: OlkItem[], gender: OlkGender | '' = ''): PersonForm => ({
+export const blankPerson = (row: number, items: OlkItem[], gender: OlkGender | '' = ''): PersonForm => ({
   row, name: '', backName: '', number: '', gender, measureAtShop: false, measures: {}, own: {},
   pieces: Object.fromEntries(items.map((it) => [it.lineNo, { qty: '1', size: '' }])),
 });
-const personFrom = (p: OlkPerson, items: OlkItem[]): PersonForm => ({
+export const personFrom = (p: OlkPerson, items: OlkItem[]): PersonForm => ({
   row: p.row, name: p.name ?? '', backName: p.backName ?? '', number: p.number ?? '', gender: p.gender, measureAtShop: p.measureAtShop,
   pieces: Object.fromEntries(items.map((it) => { const pc = p.pieces.find((x) => x.lineNo === it.lineNo); return [it.lineNo, { qty: pc ? String(pc.qty) : '0', size: pc?.customFit ? CUSTOM : pc?.size ?? '', lower: pc?.lowerSize ?? '' }]; })),
   measures: Object.fromEntries(Object.entries(p.measures).map(([k, v]) => [k, String(v)])),
@@ -87,9 +91,19 @@ function toAnswer(link: LinkPage, d: Details, people: PersonForm[]): { body: unk
   const out = [];
   for (const p of people) {
     const who = link.kind === 'team' ? `Player ${p.row}${p.backName.trim() ? ` (${p.backName.trim().toUpperCase()})` : ''}` : 'Your order';
+    const one = personOut(link, p, link.kind === 'group' ? d.gender : p.gender, who);
+    if ('problem' in one) return one;
+    out.push(one.person);
+  }
+  if (!out.length) return { problem: 'Add at least one player.' };
+  return { body: { name: d.name.trim(), gender: d.gender, mobile: d.mobile.trim(), email: d.email.trim(), address: d.address.trim(), people: out } };
+}
+
+/** One person as the server takes them (a player's row, or the member), or the first thing to fix. */
+export function personOut(link: LinkPage, p: PersonForm, gender: OlkGender | '', who: string): { person: Record<string, unknown> & { row: number } } | { problem: string } {
+  {
     if (link.kind === 'team' && !p.backName.trim()) return { problem: `${who}: type the name on the back.` };
     if (link.kind === 'team' && p.number.trim() && !/^\d{1,3}$/.test(p.number.trim())) return { problem: `${who}: the number has up to 3 digits.` };
-    const gender = link.kind === 'group' ? d.gender : p.gender;
     if (!gender) return { problem: `${who}: pick female or male.` };
     const pieces = [];
     for (const it of link.items) {
@@ -121,16 +135,14 @@ function toAnswer(link: LinkPage, d: Details, people: PersonForm[]): { body: unk
         itemMeasures.push({ lineNo: Number(lineNo), field, value: n });
       }
     }
-    out.push({
+    return { person: {
       row: p.row, gender, measureAtShop: p.measureAtShop, pieces, measures, itemMeasures,
       ...(p.name.trim() ? { name: p.name.trim() } : {}), ...(p.backName.trim() ? { backName: p.backName.trim() } : {}), ...(p.number.trim() ? { number: p.number.trim() } : {}),
-    });
+    } };
   }
-  if (!out.length) return { problem: 'Add at least one player.' };
-  return { body: { name: d.name.trim(), gender: d.gender, mobile: d.mobile.trim(), email: d.email.trim(), address: d.address.trim(), people: out } };
 }
 
-async function send<T>(method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown): Promise<T> {
+export async function send<T>(method: 'GET' | 'POST' | 'PUT', url: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, { method, credentials: 'same-origin', ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
@@ -153,12 +165,21 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   const [busy, setBusy] = useState(false);
   const base = `/api/olk/l/${encodeURIComponent(token)}`;
   const [sheet, setSheet] = useState(false); // the phone's summary, opened from its bar
+  // Players filling in their own rows for the coach (Nov 2026): a player's page, or the coach's list of what the players sent.
+  const playerToken = new URLSearchParams(query).get('p') ?? '';
+  const [loaded, setLoaded] = useState(false); // the cards are filled (from the answer, or blank)
+  const [coachKey, setCoachKey] = useState(() => coachKeyOf(token, query));
+  const [teamList, setTeamList] = useTeamList(base, token, coachKey, loaded && link?.kind === 'team' && !playerToken);
+  useEffect(() => {
+    if (link && teamList && !sent) setPeople((ps) => mergeEntries(link, ps, teamList.entries));
+  }, [teamList, sent === null, link]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     document.title = 'Order details · Virtus Garments';
     (async () => {
       const l = await send<LinkPage>('GET', base);
       setLink(l);
+      if (playerToken) return; // a player's page loads its own row
       const own = key ? await send<Mine>('GET', `${base}/answers/${encodeURIComponent(key)}`).catch((e: Error & { status?: number }) => { if (e.status === 404) return null; throw e; }) : null;
       if (own) {
         setDetails({ name: own.name, gender: own.gender, mobile: own.mobile, email: own.email, address: own.address });
@@ -170,6 +191,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
         if (key) setKey('');
         setPeople(l.kind === 'group' ? [blankPerson(0, l.items)] : [1, 2, 3].map((r) => blankPerson(r, l.items)));
       }
+      setLoaded(true);
     })().catch((e: Error & { status?: number }) => setMissing(e.status === 404 ? 'This order link does not exist. Check that the whole link was copied, or ask the shop for it again.' : e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -182,10 +204,14 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     setSheet(false);
     if ('problem' in a) { setProblem(a.problem); requestAnimationFrame(() => document.getElementById('olk-problem')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); return; }
     setProblem(''); setBusy(true);
+    // The players' rows on the list the coach sends are marked as sent (Nov 2026).
+    const fromPlayers = people.flatMap((p) => (p.entry ? [p.entry.id] : []));
+    const body = { ...(a.body as object), ...(coachKey && teamList ? { team: { key: coachKey, entries: fromPlayers } } : {}) };
     try {
       const saved = editing && key
-        ? await send<Mine>('PUT', `${base}/answers/${encodeURIComponent(key)}`, a.body)
-        : await send<Mine & { key: string }>('POST', `${base}/answers`, a.body);
+        ? await send<Mine>('PUT', `${base}/answers/${encodeURIComponent(key)}`, body)
+        : await send<Mine & { key: string }>('POST', `${base}/answers`, body);
+      if (teamList) setTeamList({ ...teamList, entries: teamList.entries.map((e) => (fromPlayers.includes(e.id) ? { ...e, onList: true } : e)) });
       if ('key' in saved && typeof saved.key === 'string') { setKey(saved.key); keepKey(token, saved.key); }
       setSent(saved); setFresh(true); setEditing(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -195,7 +221,14 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
 
   if (missing) return <Frame><p role="alert" className="rounded-2xl bg-rose-50 p-5 text-rose-800">{missing}</p></Frame>;
   if (!link) return <Frame><p className="p-6 text-center text-slate-500">Loading…</p></Frame>;
+  if (playerToken) return <PlayerPage link={link} token={token} playerToken={playerToken} query={query} />;
   const team = link.kind === 'team';
+  const newFromPlayers = teamList?.entries.filter((e) => !e.onList).length ?? 0;
+  const removeCard = (p: PersonForm) => {
+    setPeople((ps) => ps.filter((x) => x.row !== p.row));
+    // A player's row taken off the coach's list stays off (it does not come back with the next check).
+    if (p.entry && coachKey) void send<TeamList>('POST', `${base}/team/${encodeURIComponent(coachKey)}/entries/${encodeURIComponent(p.entry.id)}/remove`).then(setTeamList, () => undefined);
+  };
   const setPerson = (row: number, change: Partial<PersonForm>) => setPeople((ps) => ps.map((p) => (p.row === row ? { ...p, ...change } : p)));
 
   // Once the shop has made the job order, its status says it all: what was sent folds away, and changes go through the shop.
@@ -204,6 +237,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     <Frame title={link.title}>
       {ordered && sent.orders!.map((o) => <OrderStatus key={o.number} order={o} />)}
       {!ordered && <LinkIntro link={link} token={token} />}
+      {link.open && !ordered && newFromPlayers > 0 && <p className="rounded-2xl bg-amber-50 p-5 font-semibold text-amber-900">{newFromPlayers === 1 ? '1 player' : `${newFromPlayers} players`} sent their details after you sent the list. Tap "Change my answer" to check them and send the list again.</p>}
       {!link.open && !ordered && <p className="rounded-2xl bg-indigo-50 p-5 text-indigo-900">The shop is making your job order from these details. Open this link again to see where your order is.</p>}
       <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5" aria-live="polite">
         {fresh ? <>
@@ -246,11 +280,13 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
           <Label text="Address"><textarea className={box} rows={2} value={details.address} onChange={(e) => setDetails({ ...details, address: e.target.value })} autoComplete="street-address" maxLength={300} required /></Label>
         </Card>
 
+        {team && <PlayersLinkCard base={base} token={token} coachKey={coachKey} coachName={details.name} list={teamList} onStarted={(k, l) => { setCoachKey(k); setTeamList(l); }} />}
         {team && <TeamSheet link={link} people={people} custom={CUSTOM} blank={(row) => blankPerson(row, link.items)} onLoad={setPeople} />}
 
         {people.map((p) => (
           <Card key={p.row} title={team ? `Player ${p.row}` : 'Your order'}
-            action={team && people.length > 1 ? <button type="button" className="text-sm font-semibold text-rose-700" onClick={() => setPeople((ps) => ps.filter((x) => x.row !== p.row))}>Remove</button> : undefined}>
+            action={team && people.length > 1 ? <button type="button" className="text-sm font-semibold text-rose-700" onClick={() => removeCard(p)}>Remove</button> : undefined}>
+            {p.entry && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">Filled in by the player. Check it before sending.</p>}
             {team && <>
               <div className="grid grid-cols-[1fr_6rem] gap-3">
                 <Label text="Name on the back"><input className={`${box} uppercase`} value={p.backName} onChange={(e) => setPerson(p.row, { backName: e.target.value })} maxLength={40} /></Label>
@@ -361,7 +397,7 @@ function SoFar({ link, tally }: { link: LinkPage; tally: Tally }) {
 }
 
 /** `aside`: the floating summary, beside the form on a wide screen (the phone has its own bar). */
-function Frame({ title, intro, aside, children }: { title?: string; intro?: string; aside?: ReactNode; children: ReactNode }) {
+export function Frame({ title, intro, aside, children }: { title?: string; intro?: string; aside?: ReactNode; children: ReactNode }) {
   const width = aside ? 'max-w-2xl lg:max-w-5xl' : 'max-w-2xl';
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
@@ -383,7 +419,7 @@ function Frame({ title, intro, aside, children }: { title?: string; intro?: stri
   );
 }
 
-function Card({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+export function Card({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="space-y-3 rounded-3xl bg-white p-5 ring-1 ring-slate-900/5">
       <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold">{title}</h2>{action}</div>
@@ -392,9 +428,9 @@ function Card({ title, action, children }: { title: string; action?: ReactNode; 
   );
 }
 
-const Label = ({ text, children }: { text: string; children: ReactNode }) => <label className="block space-y-1"><span className="text-sm font-semibold text-slate-700">{text}</span>{children}</label>;
+export const Label = ({ text, children }: { text: string; children: ReactNode }) => <label className="block space-y-1"><span className="text-sm font-semibold text-slate-700">{text}</span>{children}</label>;
 
-function GenderPick({ value, onChange }: { value: OlkGender | ''; onChange: (g: OlkGender) => void }) {
+export function GenderPick({ value, onChange }: { value: OlkGender | ''; onChange: (g: OlkGender) => void }) {
   return (
     <fieldset>
       <legend className="mb-1 text-sm font-semibold text-slate-700">Gender <span className="font-normal text-slate-500">(for the cut: women's or men's)</span></legend>
@@ -408,7 +444,7 @@ function GenderPick({ value, onChange }: { value: OlkGender | ''; onChange: (g: 
   );
 }
 
-function Pieces({ link, person, gender, onChange }: { link: LinkPage; person: PersonForm; gender: OlkGender | ''; onChange: (pieces: PersonForm['pieces']) => void }) {
+export function Pieces({ link, person, gender, onChange }: { link: LinkPage; person: PersonForm; gender: OlkGender | ''; onChange: (pieces: PersonForm['pieces']) => void }) {
   const cut = gender === 'female' ? "women's" : gender === 'male' ? "men's" : '';
   return (
     <div className="divide-y divide-slate-100 rounded-2xl bg-slate-50 px-4">
@@ -461,7 +497,7 @@ export const setSizeWords = (size: string | undefined, lower: string | undefined
  * The shop's note and the pictures of the design, at the top of the link (the owner's request, Nov 2026). A picture opens
  * full size on a tap.
  */
-function LinkIntro({ link, token }: { link: LinkPage; token: string }) {
+export function LinkIntro({ link, token }: { link: LinkPage; token: string }) {
   const [big, setBig] = useState<string | null>(null);
   const pics = link.pictures ?? [];
   if (!link.note && !pics.length) return null;
@@ -493,7 +529,7 @@ function LinkIntro({ link, token }: { link: LinkPage; token: string }) {
 }
 
 /** The person's measurements, each once; under each made-to-measure item, the same values, which may differ for that item. */
-function Measurements({ link, person, onChange }: { link: LinkPage; person: PersonForm; onChange: (c: Partial<PersonForm>) => void }) {
+export function Measurements({ link, person, onChange }: { link: LinkPage; person: PersonForm; onChange: (c: Partial<PersonForm>) => void }) {
   const fields = fieldsFor(person, link.items, link.guide);
   const items = link.items.filter((it) => measuredPiece(it, person));
   const [openItems, setOpenItems] = useState<number[]>(() => [...new Set(Object.keys(person.own).map((k) => Number(k.split(':')[0])))]);
@@ -602,7 +638,7 @@ function Summary({ link, answer }: { link: LinkPage; answer: OlkAnswer }) {
   );
 }
 
-function KeepLink({ url, closesOn }: { url: string; closesOn: string }) {
+export function KeepLink({ url, closesOn }: { url: string; closesOn: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-2 rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">
