@@ -8,6 +8,9 @@
  * A group link where each member pays their own share shows the prices, the member's share, and the shop's QR code to pay
  * it and send the reference and a screenshot; the page then shows whether the shop received it.
  * Once the shop makes the job order from an answer, the person's own link shows its status, with their wearers and sizes.
+ * While the form is filled in, a summary floats beside it (the owner's request, Nov 2026): a panel on the right on a computer,
+ * a bar at the bottom of a phone that opens the whole summary. It counts the players, each item's pieces by size, the sizes
+ * still to pick, and a member's own share. A team's coach may list the players in Excel instead (TeamSheet.tsx).
  */
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
@@ -15,8 +18,9 @@ import type { CustomerOrder, OlkAnswer, OlkGender, OlkGuide, OlkItem, OlkKind, O
 import { SHOP_CONTACT } from '../../shop/products.ts';
 import { base64, prepare } from '../../shop/Support.tsx';
 import { OrderStatus, pcs, sizeWords } from '../../shop/OrderStatus.tsx';
+import { TeamSheet } from './TeamSheet.tsx';
 
-interface LinkPage {
+export interface LinkPage {
   kind: OlkKind; title: string; closesOn: string; closedOn?: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
   prices?: { lineNo: number; tiers: { fromQty: number; unitPriceCents: number }[] }[]; pay?: OlkPayHow | null; // each pays their own share
 }
@@ -26,7 +30,7 @@ export function priceFor(tiers: { fromQty: number; unitPriceCents: number }[] | 
   const t = (tiers ?? []).filter((x) => x.fromQty <= Math.max(1, qty)).at(-1);
   return t ? t.unitPriceCents : null;
 }
-interface PersonForm {
+export interface PersonForm {
   row: number; name: string; backName: string; number: string; gender: OlkGender | ''; measureAtShop: boolean;
   pieces: Record<number, { qty: string; size: string }>; measures: Record<string, string>; own: Record<string, string>; // own: `${lineNo}:${field}` for one item
 }
@@ -143,6 +147,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
   const base = `/api/olk/l/${encodeURIComponent(token)}`;
+  const [sheet, setSheet] = useState(false); // the phone's summary, opened from its bar
 
   useEffect(() => {
     document.title = 'Order details · Virtus Garments';
@@ -169,7 +174,8 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     e.preventDefault();
     if (!link) return;
     const a = toAnswer(link, details, people);
-    if ('problem' in a) return setProblem(a.problem);
+    setSheet(false);
+    if ('problem' in a) { setProblem(a.problem); requestAnimationFrame(() => document.getElementById('olk-problem')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); return; }
     setProblem(''); setBusy(true);
     try {
       const saved = editing && key
@@ -216,10 +222,13 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     </Frame>
   );
 
+  const sendLabel = busy ? 'Sending…' : editing ? 'Save my changes' : 'Send my order details';
+  const tally = tallyOf(link, people);
   return (
-    <Frame title={link.title} intro={`${team ? 'Give your details, then each player: the name on the back, the number and the size of each piece.' : 'Give your details and the pieces you want, with your size or measurements.'} Open until ${day(link.closesOn)}.`}>
+    <Frame title={link.title} intro={`${team ? 'Give your details, then each player: the name on the back, the number and the size of each piece.' : 'Give your details and the pieces you want, with your size or measurements.'} Open until ${day(link.closesOn)}.`}
+      aside={<div className="sticky top-4 rounded-3xl bg-white p-5 ring-1 ring-slate-900/5"><SoFar link={link} tally={tally} /></div>}>
       {editing && personal && <p className="rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">You are changing the answer you sent. Save to keep the changes.</p>}
-      <form onSubmit={(e) => void submit(e)} className="space-y-5" noValidate>
+      <form id="olk-form" onSubmit={(e) => void submit(e)} className="space-y-5" noValidate>
         <Card title={team ? 'Your details (the coach or the one in charge)' : 'Your details'}>
           <Label text="Full name"><input className={box} value={details.name} onChange={(e) => setDetails({ ...details, name: e.target.value })} autoComplete="name" maxLength={120} required /></Label>
           <GenderPick value={details.gender} onChange={(gender) => setDetails({ ...details, gender })} />
@@ -229,6 +238,8 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
           </div>
           <Label text="Address"><textarea className={box} rows={2} value={details.address} onChange={(e) => setDetails({ ...details, address: e.target.value })} autoComplete="street-address" maxLength={300} required /></Label>
         </Card>
+
+        {team && <TeamSheet link={link} people={people} custom={CUSTOM} blank={(row) => blankPerson(row, link.items)} onLoad={setPeople} />}
 
         {people.map((p) => (
           <Card key={p.row} title={team ? `Player ${p.row}` : 'Your order'}
@@ -251,28 +262,115 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
         )}
 
         {link.payOwn && <ShareSoFar link={link} person={people[0]} />}
-        {problem && <p role="alert" className="rounded-2xl bg-rose-50 px-5 py-4 font-semibold text-rose-800">{problem}</p>}
+        {problem && <p id="olk-problem" role="alert" className="scroll-mt-4 rounded-2xl bg-rose-50 px-5 py-4 font-semibold text-rose-800">{problem}</p>}
         <button type="submit" disabled={busy} className="w-full rounded-full bg-slate-900 py-4 text-lg font-bold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400">
-          {busy ? 'Sending…' : editing ? 'Save my changes' : 'Send my order details'}
+          {sendLabel}
         </button>
         <p className="text-center text-sm text-slate-500">{link.payOwn ? 'You pay your share after sending your details.' : 'No payment is taken on this page. The shop reviews your details first.'}</p>
       </form>
+      {/* The phone's floating summary: the totals in a bar at the bottom; tapped, the whole summary opens above it. */}
+      <div className="lg:hidden">
+        {sheet && <button type="button" aria-label="Close the summary" className="fixed inset-0 z-30 bg-slate-900/40" onClick={() => setSheet(false)} />}
+        <div className="fixed inset-x-0 bottom-0 z-40 rounded-t-3xl bg-white shadow-[0_-8px_30px_rgb(15_23_42/0.15)] ring-1 ring-slate-900/10 pb-[env(safe-area-inset-bottom)]">
+          {sheet && <div id="olk-sheet" className="max-h-[65vh] overflow-y-auto px-5 pt-5"><SoFar link={link} tally={tally} /></div>}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <button type="button" aria-expanded={sheet} aria-controls="olk-sheet" onClick={() => setSheet((s) => !s)} className="min-w-0 flex-1 text-left">
+              <span className="block truncate font-bold">{tally.headline}</span>
+              <span className={`block truncate text-sm ${!sheet && tally.unpicked > 0 ? 'font-semibold text-amber-800' : 'text-indigo-700'}`}>{sheet ? 'Hide the summary ▾'
+                : tally.unpicked > 0 ? `${tally.unpicked === 1 ? '1 piece needs its size' : `${tally.unpicked} pieces need their size`} · See ▴`
+                : `${tally.share !== undefined ? `${tally.share === null ? 'Your share: from the shop' : `Your share ${formatPeso(tally.share)}`} · ` : ''}See the summary ▴`}</span>
+            </button>
+            <button type="submit" form="olk-form" disabled={busy} className="shrink-0 rounded-full bg-slate-900 px-5 py-3 font-bold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400">{busy ? 'Sending…' : editing ? 'Save' : 'Send'}</button>
+          </div>
+        </div>
+      </div>
     </Frame>
   );
 }
 
-function Frame({ title, intro, children }: { title?: string; intro?: string; children: ReactNode }) {
+/** What the form holds so far: each item's pieces by size, the sizes still to pick, the players, and a member's share. */
+export interface Tally {
+  people: number; pieces: number; unpicked: number; headline: string;
+  items: { lineNo: number; name: string; qty: number; sizes: [string, number][] }[];
+  /** A member who pays their own share: the amount, null when an item has no price on the list; undefined otherwise. */
+  share?: number | null;
+}
+export function tallyOf(link: LinkPage, people: PersonForm[]): Tally {
+  const team = link.kind === 'team';
+  const order = new Map(link.sizes.map((s, i) => [s.label, i]));
+  let unpicked = 0;
+  const items = link.items.map((it) => {
+    const by = new Map<string, number>();
+    let qty = 0;
+    for (const p of people) {
+      const pc = p.pieces[it.lineNo];
+      const n = Number(pc?.qty) || 0;
+      if (n <= 0) continue;
+      qty += n;
+      const label = it.sizing === 'measure' ? 'Made to measurements' : pc!.size === CUSTOM ? 'Custom fit' : pc!.size ? pc!.size : '';
+      if (!label) unpicked += n;
+      by.set(label || 'Size not picked yet', (by.get(label || 'Size not picked yet') ?? 0) + n);
+    }
+    const rank = (s: string) => order.get(s) ?? (s === 'Custom fit' ? 1000 : s === 'Made to measurements' ? 1001 : 1002);
+    return { lineNo: it.lineNo, name: it.name, qty, sizes: [...by].sort((a, b) => rank(a[0]) - rank(b[0])) };
+  });
+  const pieces = items.reduce((n, it) => n + it.qty, 0);
+  const withPieces = people.filter((p) => link.items.some((it) => (Number(p.pieces[it.lineNo]?.qty) || 0) > 0)).length;
+  const headline = team ? `${withPieces} ${withPieces === 1 ? 'player' : 'players'} · ${pcs(pieces)}` : pcs(pieces);
+  return { people: withPieces, pieces, unpicked, headline, items, ...(link.payOwn ? { share: shareOf(link, people[0]) } : {}) };
+}
+
+/** The floating summary's content: the same on the computer's side panel and the phone's sheet. */
+function SoFar({ link, tally }: { link: LinkPage; tally: Tally }) {
+  return (
+    <div className="space-y-4" aria-live="polite">
+      <div>
+        <p className="text-sm font-semibold text-slate-500">Your order so far</p>
+        <p className="text-2xl font-extrabold">{tally.headline}</p>
+      </div>
+      <ul className="space-y-3">
+        {tally.items.map((it) => (
+          <li key={it.lineNo} className="rounded-2xl bg-slate-50 p-3">
+            <p className="flex items-baseline justify-between gap-3"><span className="font-semibold">{it.name}</span><span className="shrink-0 text-sm tabular-nums text-slate-600">{pcs(it.qty)}</span></p>
+            {it.sizes.length > 0 && <ul className="mt-2 flex flex-wrap gap-1.5">
+              {it.sizes.map(([size, n]) => (
+                <li key={size} className={`rounded-full px-2.5 py-0.5 text-sm font-semibold ${size === 'Size not picked yet' ? 'bg-amber-100 text-amber-900' : 'bg-white text-slate-700 ring-1 ring-slate-200'}`}>
+                  {size} <span className="tabular-nums">×{n}</span>
+                </li>
+              ))}
+            </ul>}
+          </li>
+        ))}
+      </ul>
+      {tally.unpicked > 0 && <p className="text-sm font-semibold text-amber-800">{tally.unpicked === 1 ? '1 piece still needs its size.' : `${tally.unpicked} pieces still need their size.`}</p>}
+      {tally.share !== undefined && (
+        <p className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-3"><span className="font-semibold">Your share</span>
+          <span className="text-xl font-extrabold tabular-nums">{tally.share === null ? 'The shop will tell you' : formatPeso(tally.share)}</span></p>
+      )}
+      {link.kind === 'team' && <p className="text-xs text-slate-500">Players with no pieces are not counted.</p>}
+    </div>
+  );
+}
+
+/** `aside`: the floating summary, beside the form on a wide screen (the phone has its own bar). */
+function Frame({ title, intro, aside, children }: { title?: string; intro?: string; aside?: ReactNode; children: ReactNode }) {
+  const width = aside ? 'max-w-2xl lg:max-w-5xl' : 'max-w-2xl';
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <header className="bg-slate-900 px-4 pb-8 pt-6 text-white">
-        <div className="mx-auto max-w-2xl">
+        <div className={`mx-auto ${width}`}>
           <p className="text-sm font-semibold tracking-wide text-emerald-300">Virtus Garments · Order details</p>
           {title && <h1 className="mt-1 text-2xl font-extrabold sm:text-3xl">{title}</h1>}
           {intro && <p className="mt-2 text-sm text-white/75">{intro}</p>}
         </div>
       </header>
-      <main className="mx-auto -mt-4 max-w-2xl space-y-4 px-4 pb-12">{children}</main>
-      <footer className="pb-8 text-center text-xs text-slate-500">Questions? Call or text {SHOP_CONTACT.phone} · {SHOP_CONTACT.email}</footer>
+      {aside
+        ? <div className={`mx-auto -mt-4 ${width} px-4 pb-32 lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-6 lg:pb-12`}>
+            <main className="min-w-0 space-y-4">{children}</main>
+            <aside className="hidden self-stretch lg:block" aria-label="Your order so far">{aside}</aside>
+          </div>
+        : <main className="mx-auto -mt-4 max-w-2xl space-y-4 px-4 pb-12">{children}</main>}
+      <footer className={`text-center text-xs text-slate-500 ${aside ? 'pb-32 lg:pb-8' : 'pb-8'}`}>Questions? Call or text {SHOP_CONTACT.phone} · {SHOP_CONTACT.email}</footer>
     </div>
   );
 }
@@ -460,16 +558,21 @@ function KeepLink({ url, closesOn }: { url: string; closesOn: string }) {
   );
 }
 
+/** A member's share of what they filled in: the amount, null when an item has no price on the list, 0 with no pieces yet. */
+function shareOf(link: LinkPage, person: PersonForm | undefined): number | null {
+  if (!person) return 0;
+  const lines = link.items.map((it) => ({ qty: Number(person.pieces[it.lineNo]?.qty) || 0, each: priceFor(link.prices?.find((x) => x.lineNo === it.lineNo)?.tiers, Number(person.pieces[it.lineNo]?.qty) || 1) })).filter((l) => l.qty > 0);
+  return lines.every((l) => l.each !== null) ? lines.reduce((s, l) => s + l.qty * l.each!, 0) : null;
+}
+
 /** The member's share as they fill in the form (the server works it out again when they send it). */
 function ShareSoFar({ link, person }: { link: LinkPage; person: PersonForm | undefined }) {
-  if (!person) return null;
-  const lines = link.items.map((it) => ({ qty: Number(person.pieces[it.lineNo]?.qty) || 0, each: priceFor(link.prices?.find((x) => x.lineNo === it.lineNo)?.tiers, Number(person.pieces[it.lineNo]?.qty) || 1) })).filter((l) => l.qty > 0);
-  if (!lines.length) return null;
-  const known = lines.every((l) => l.each !== null);
+  const share = shareOf(link, person);
+  if (share === 0) return null;
   return (
     <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-white p-5 ring-1 ring-slate-900/5">
       <span className="font-semibold">Your share</span>
-      <span className="text-2xl font-extrabold tabular-nums">{known ? formatPeso(lines.reduce((s, l) => s + l.qty * l.each!, 0)) : 'The shop will tell you'}</span>
+      <span className="text-2xl font-extrabold tabular-nums">{share === null ? 'The shop will tell you' : formatPeso(share)}</span>
     </div>
   );
 }
