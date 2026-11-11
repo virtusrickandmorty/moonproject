@@ -55,6 +55,18 @@ it("collects each player's own row in the coach's list; only the coach's list re
   expect(detail.responses).toHaveLength(1);
   expect(detail.responses[0].people.map((p: { backName: string }) => p.backName)).toEqual(['CRUZ', 'SANTOS']);
 
+  // A row sent twice with the phone's own key (a retry) is one row; an answer too.
+  const clientKey = 'made-up-phone-key-0123456789abcdef';
+  const one = (await pub('POST', `${base}/players/${playerToken}`, { ...player('LIM', 'S', '5'), clientKey })).body;
+  const two = (await pub('POST', `${base}/players/${playerToken}`, { ...player('LIM', 'S', '5'), clientKey })).body;
+  expect([one.key, two.key, two.id]).toEqual([clientKey, clientKey, one.id]);
+  const coachAgain = { name: 'Made-up Coach Two', gender: 'female', mobile: '09170000000', email: 'two@example.test', address: 'Made-up Court', people: [{ row: 1, ...player('DIAZ', 'M') }], clientKey: 'made-up-answer-key-0123456789abcd' };
+  const a1 = (await pub('POST', `${base}/answers`, coachAgain)).body;
+  const a2 = (await pub('POST', `${base}/answers`, coachAgain)).body;
+  expect([a1.key, a2.id]).toEqual([coachAgain.clientKey, a1.id]);
+  expect((await owner.get(`/api/olk/links/${link.id}`)).json().responses).toHaveLength(2);
+  expect((await pub('POST', `${base}/answers`, { ...coachAgain, clientKey: 'short' })).status).toBe(400);
+
   // Another's key does nothing; the coach's list needs the coach's own key.
   expect((await pub('GET', `${base}/team/${cruz.key}`)).status).toBe(404);
 });

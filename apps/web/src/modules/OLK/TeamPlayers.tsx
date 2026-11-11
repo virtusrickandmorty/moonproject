@@ -7,9 +7,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { OlkPerson } from '../../api.ts';
 import {
-  Card, Frame, GenderPick, KeepLink, Label, LinkIntro, Measurements, Pieces, blankPerson, box, personFrom, personOut, send,
+  Card, Frame, GenderPick, KeepLink, Label, LinkIntro, Measurements, OfflineNote, Pieces, Waiting, blankPerson, box, personFrom, personOut, send,
   type LinkPage, type PersonForm,
 } from './OrderLinkPage.tsx';
+import { clearDraft, clearPending, isOffline, keepPending, newClientKey, pendingOf, readDraft, useDraft, useOnline, useOutbox, type Pending } from './offline.ts';
 
 export interface TeamEntry { id: string; person: OlkPerson; sentAt: string; updatedAt: string; onList: boolean }
 export interface TeamList { playerToken: string; coachName: string | null; entries: TeamEntry[] }
@@ -125,17 +126,41 @@ export function PlayerPage({ link, token, playerToken, query }: { link: LinkPage
   const [editing, setEditing] = useState(false);
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
+  // Without internet (Nov 2026): what the player types is kept on the phone, and what they send waits there until online.
+  const draftKey = `olk-player-draft:${playerToken}`, outKey = `olk-player-outbox:${playerToken}`;
+  const online = useOnline();
+  const [queued, setQueued] = useState(() => !!pendingOf(outKey));
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     document.title = 'Your details · Virtus Garments';
     (async () => {
-      const inv = await send<{ coachName: string | null }>('GET', base);
+      // Who asked: from the server, else (no internet) from what this phone kept.
+      const inv = await send<{ coachName: string | null }>('GET', base).catch((e) => {
+        if (isOffline(e) && readDraft<{ coachName: string | null }>(`${draftKey}:coach`)) return readDraft<{ coachName: string | null }>(`${draftKey}:coach`)!;
+        throw e;
+      });
       setCoach(inv.coachName);
+      try { localStorage.setItem(`${draftKey}:coach`, JSON.stringify(inv)); } catch { /* kept for offline only */ }
       const own = key ? await send<Mine>('GET', `${base}/${encodeURIComponent(key)}`).catch(() => null) : null;
-      if (own) { setSent(own); setMe(personFrom({ ...own.person, row: 1 }, link.items)); store.set(keyStore, key); } else if (key) setKey('');
-    })().catch((e: Error & { status?: number }) => setMissing(e.status === 404 ? 'This link for the players does not work. Ask your coach to send it again.' : e.message));
+      const draft = readDraft<PersonForm>(draftKey);
+      if (draft) { setMe(draft); if (own) { setEditing(true); } }
+      else if (own) { setSent(own); setMe(personFrom({ ...own.person, row: 1 }, link.items)); }
+      if (own) store.set(keyStore, key); else if (key && online) setKey('');
+      setReady(true);
+    })().catch((e: Error & { status?: number }) => setMissing(e.status === 404 ? 'This link for the players does not work. Ask your coach to send it again.'
+      : isOffline(e) ? 'No internet right now, and this link has not been opened on this phone before. Open it again once you are online.' : e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerToken]);
+  useDraft(draftKey, me, ready && !queued && (!sent || editing) && link.open);
+  const done = (r: Mine) => {
+    if (r.key) { setKey(r.key); store.set(keyStore, r.key); }
+    clearDraft(draftKey);
+    setSent(r); setEditing(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const outbox = useOutbox(outKey, queued, (p) => send<Mine & { key?: string }>(p.method, p.url, p.body),
+    (r) => { setQueued(false); done(r); }, (e) => { setQueued(false); setProblem(e.message); });
 
   const from = coach ? `your coach, ${coach}` : 'your coach';
   const submit = async (e: FormEvent) => {
@@ -144,16 +169,18 @@ export function PlayerPage({ link, token, playerToken, query }: { link: LinkPage
     if ('problem' in one) { setProblem(one.problem); return; }
     const { row: _row, ...body } = one.person;
     setProblem(''); setBusy(true);
+    const req: Pending = editing && key ? { method: 'PUT', url: `${base}/${encodeURIComponent(key)}`, body, at: new Date().toISOString() } : { method: 'POST', url: base, body: { ...body, clientKey: newClientKey() }, at: new Date().toISOString() };
     try {
-      const r = editing && key ? await send<Mine>('PUT', `${base}/${encodeURIComponent(key)}`, body) : await send<Mine & { key: string }>('POST', base, body);
-      if (r.key) { setKey(r.key); store.set(keyStore, r.key); }
-      setSent(r); setEditing(false);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) { setProblem((err as Error).message); } finally { setBusy(false); }
+      done(await send<Mine>(req.method, req.url, req.body));
+    } catch (err) {
+      if (isOffline(err)) { keepPending(outKey, req); setQueued(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else setProblem((err as Error).message);
+    } finally { setBusy(false); }
   };
 
   if (missing) return <Frame title={link.title}><p role="alert" className="rounded-2xl bg-rose-50 p-5 text-rose-800">{missing}</p></Frame>;
   if (coach === undefined) return <Frame title={link.title}><p className="p-6 text-center text-slate-500">Loading…</p></Frame>;
+  if (queued) return <Waiting title={link.title} online={online} trying={outbox.trying} onRetry={outbox.retry} onChange={() => { clearPending(outKey); setQueued(false); }} />;
   if (sent && !editing) {
     const p = sent.person;
     return (
@@ -181,6 +208,7 @@ export function PlayerPage({ link, token, playerToken, query }: { link: LinkPage
   return (
     <Frame title={link.title} intro={`Hi! ${coach ? `Your coach, ${coach},` : 'Your coach'} asks for your details for the team list: the name on the back, your number and your size.`}>
       <LinkIntro link={link} token={token} />
+      {!online && <OfflineNote />}
       <form onSubmit={(e) => void submit(e)} className="space-y-5" noValidate>
         <Card title="Your details">
           <div className="grid grid-cols-[1fr_6rem] gap-3">
