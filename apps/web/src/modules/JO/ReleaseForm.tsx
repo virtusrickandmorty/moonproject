@@ -2,7 +2,8 @@
  * Release slip form (PLAN E4, D3): pick the job order, tick the lines and pieces going out (only what is left), who claimed
  * it and the ID seen, the credit note and due days when a balance is still due (owner and accountant), and the owner's
  * reason when it goes out before it is ready. The booklet invoice number is recorded in the same action, unless the
- * invoice is to follow. The balance due and "write these on the booklet" come from the server's preview.
+ * invoice is to follow. The balance due and "write these on the booklet" come from the server's preview. The job order's
+ * earlier releases with no invoice yet are ticked to go on the same invoice (the owner's request, Nov 2026).
  * A recorded release is corrected by cancelling it and releasing again, so this form has no Edit.
  */
 import { Fragment, useEffect, useMemo, useState } from 'react';
@@ -13,7 +14,7 @@ import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, Figures, useLive } from '../COL/parts.tsx';
-import { Booklet, JoPicker } from './parts.tsx';
+import { AlsoOnInvoice, Booklet, JoPicker } from './parts.tsx';
 import { nothingToCharge, ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, type ReleaseValues } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
@@ -21,7 +22,7 @@ const money = `${inputClass} text-right tabular-nums`;
 const onlyReady = (lines: JoStatus['lines']) => Object.fromEntries(Object.entries(allLeft(lines)).filter(([n]) => lines.find((l) => l.lineNo === Number(n))?.ready !== false));
 const READY = ['ready', 'partially_released'];
 
-function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | null; free: boolean; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
+function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | null; also: string[]; free: boolean; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
   const key = useMemo(newIdempotencyKey, [p.preview]); // same key when a click is retried, a new one after a new preview
   const a = useAction();
   const r = p.preview.release;
@@ -30,7 +31,7 @@ function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | nul
     <Dialog title="Record this release?" onClose={p.onClose}>
       <p>{r.summary}</p>
       {p.free ? <Notice tone="info">Nothing to charge, so no invoice is needed.</Notice> : p.invoiceNumber ? <Booklet b={p.preview.booklet} depositAppliedCents={p.preview.depositAppliedCents} /> : <Notice tone="warning">Invoice to follow: the release waits on the exceptions list until its invoice is recorded.</Notice>}
-      {p.invoiceNumber && <p className="text-sm">Invoice no. <b>{p.invoiceNumber}</b> is recorded with it.</p>}
+      {p.invoiceNumber && <p className="text-sm">Invoice no. <b>{p.invoiceNumber}</b> is recorded with it{p.also.length ? <>, for {p.also.join(', ')} too</> : ''}.</p>}
       {r.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       {r.journal && r.journal.length > 0 && <Panel title="Behind the scenes"><JournalTable lines={r.journal} /></Panel>}
       {a.error && <Notice>{a.error}</Notice>}
@@ -49,6 +50,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
   const [confirm, setConfirm] = useState<ReleasePreview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
+  const [unticked, setUnticked] = useState<string[]>([]); // earlier releases left off this invoice
   const fail = (e: Error) => setError(e.message);
   const can = (key: string) => me.permissions.includes(key);
 
@@ -56,6 +58,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
     api.joStatus(id).then((s) => {
       setJo({ id, label: `${s.jobOrder.number} · ${s.jobOrder.customerName}` });
       setStatus(s);
+      setUnticked([]);
       setV((old) => ({ ...emptyRelease(id), claimedBy: old.claimedBy, idSeen: old.idSeen, ...readyWearers(s.lines, onlyReady(s.lines)) }));
     }, fail);
   useEffect(() => {
@@ -65,12 +68,15 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
 
   const set = (patch: Partial<ReleaseValues>) => setV((old) => ({ ...old, ...patch }));
   const typed = releaseInput(v, status?.lines ?? []);
-  const live = useLive(JSON.stringify(typed.release), typed.releaseErrors.length === 0, () => api.joReleasePreview(typed.release));
+  // The earlier releases of the job order with no invoice yet, ticked unless left off: on this invoice too.
+  const waiting = (status?.awaitingInvoice ?? []).map((r) => ({ id: r.id, number: r.number, date: r.businessDate, totalCents: r.totalCents }));
+  const also = v.invoiceToFollow ? [] : waiting.filter((r) => !unticked.includes(r.id)).map((r) => r.id);
+  const live = useLive(JSON.stringify([typed.release, also]), typed.releaseErrors.length === 0, () => api.joReleasePreview(typed.release, also));
   const balance = live?.release.doc.balanceDueCents ?? status?.money.balanceDueCents ?? 0;
   // Ready when every line picked may go out now (its own production is done); an older server says it by the stage.
   const picked = (status?.lines ?? []).filter((l) => { const q = (v.qtys[l.lineNo] ?? '').trim(); return !!q && q !== '0'; });
-  const waiting = picked.filter((l) => l.ready === false);
-  const ready = status ? (status.lines.some((l) => l.ready !== undefined) ? waiting.length === 0 : READY.includes(status.stage)) : true;
+  const notReady = picked.filter((l) => l.ready === false);
+  const ready = status ? (status.lines.some((l) => l.ready !== undefined) ? notReady.length === 0 : READY.includes(status.stage)) : true;
 
   // Nothing to charge (a free alteration, say): nothing to invoice, so no invoice number is asked for. The server asks for none either.
   const free = nothingToCharge(status?.money.totalCents, typed.releaseErrors.length === 0 ? live?.release.totalCents : undefined);
@@ -79,14 +85,15 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
     setTouched(true);
     if (typed.releaseErrors.length > 0) return;
     // The fresh preview decides: what is shown may be a moment behind what was just typed.
-    api.joReleasePreview(typed.release).then((p) => { if (p.release.totalCents === 0 || typed.errors.length === 0) setConfirm(p); }, fail);
+    api.joReleasePreview(typed.release, also).then((p) => { if (p.release.totalCents === 0 || typed.errors.length === 0) setConfirm(p); }, fail);
   };
   const record = async (key: string) => {
     try {
-      const r = await api.joRelease({ release: typed.release, invoice: confirm!.release.totalCents === 0 ? null : typed.invoice }, confirm!.release.totalCents, key);
+      const invoice = confirm!.release.totalCents === 0 || !typed.invoice ? null : { ...typed.invoice, ...(also.length ? { alsoReleaseIds: also } : {}) };
+      const r = await api.joRelease({ release: typed.release, invoice }, confirm!.release.totalCents, key);
       navigate(docPath(type.key, `/${r.release.id}?recorded=1`));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.joReleasePreview(typed.release));
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.joReleasePreview(typed.release, also));
       throw e;
     }
   };
@@ -193,8 +200,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         {status && !ready && (
           <Panel title="Not ready yet">
             {/* Nothing goes out before it is ready, the owner included (the owner's rule, Oct 11, 2026). */}
-            <Notice tone="warning">{waiting.length > 0
-              ? `${waiting.map((l) => `Line ${l.lineNo}`).join(', ')} ${waiting.length === 1 ? 'is' : 'are'} still being made. Untick ${waiting.length === 1 ? 'it' : 'them'}: only what is ready for release can go out.`
+            <Notice tone="warning">{notReady.length > 0
+              ? `${notReady.map((l) => `Line ${l.lineNo}`).join(', ')} ${notReady.length === 1 ? 'is' : 'are'} still being made. Untick ${notReady.length === 1 ? 'it' : 'them'}: only what is ready for release can go out.`
               : `${status.jobOrder.number} is ${status.stageLabel}. Only what is ready for release can go out.`}</Notice>
           </Panel>
         )}
@@ -223,6 +230,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
             <input type="checkbox" checked={v.invoiceToFollow} onChange={(e) => set({ invoiceToFollow: e.target.checked })} />
             Invoice to follow (the booklet is not at hand)
           </label>
+          {!v.invoiceToFollow && <AlsoOnInvoice list={waiting} ticked={also} onChange={(ids) => setUnticked(waiting.filter((r) => !ids.includes(r.id)).map((r) => r.id))} />}
         </Panel>}
         <Errors list={errors} show={touched} />
         <Panel title="So far">
@@ -236,7 +244,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
           <Button onClick={() => history.back()}>Back</Button>
         </SalesActions>
       </div>
-      {confirm && <ConfirmDialog preview={confirm} free={confirm.release.totalCents === 0} invoiceNumber={typed.invoice?.invoiceNumber ?? null} onRecord={record} onClose={() => setConfirm(null)} />}
+      {confirm && <ConfirmDialog preview={confirm} free={confirm.release.totalCents === 0} invoiceNumber={typed.invoice?.invoiceNumber ?? null}
+        also={waiting.filter((r) => also.includes(r.id)).map((r) => r.number)} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );
 }

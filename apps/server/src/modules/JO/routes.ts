@@ -17,7 +17,7 @@ import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
 import { OUT_FOR_DELIVERY, isOutForDelivery, recordReceived, releasesWithReceiver } from './received.ts';
 import { joListRoutes } from './list.ts';
 import { lineState, releasableQty, releaseDoc, releasedWearers, type Release } from './doctypes/release.ts';
-import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
+import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput, linesOfReleases } from './doctypes/invoice-record.ts';
 
 const stageBody = z.object({ from: z.enum(STAGES), to: z.enum(STAGES), reason: z.string().max(500).optional() }).strict();
 /** Release + its invoice record in one action (PLAN E4). invoice: null = "invoice to follow" (D3 release gate). */
@@ -29,8 +29,13 @@ const searchOf = (req: FastifyRequest) => String((req.query as { q?: unknown }).
 const RELEASES = `SELECT d.id, d.number, d.business_date AS date, d.status, d.total_cents AS totalCents, r.job_order_id AS jobOrderId, j.number AS jobOrderNumber,
     o.customer_name AS customerName, inv.id AS invoiceId, inv.number AS invoiceRecordNumber, inv.invoice_number AS invoiceNumber
   FROM jo_releases r JOIN documents d ON d.id = r.document_id JOIN documents j ON j.id = r.job_order_id JOIN jo_orders o ON o.document_id = r.job_order_id
-  LEFT JOIN (SELECT i.release_id, x.id, x.number, i.invoice_number FROM jo_invoice_records i JOIN documents x ON x.id = i.document_id WHERE x.status = 'posted') inv
+  LEFT JOIN (SELECT c.release_id, x.id, x.number, i.invoice_number FROM jo_invoice_covers c JOIN jo_invoice_records i ON i.document_id = c.document_id
+    JOIN documents x ON x.id = c.document_id WHERE x.status = 'posted') inv
     ON inv.release_id = r.document_id`;
+const releaseIds = z.array(z.uuid()).max(50);
+/** The earlier releases of a job order with something to invoice and no invoice yet: to put on the same invoice (the owner's request, Nov 2026). */
+const uninvoiced = (db: Db, jobOrderId: string, except?: string) =>
+  awaitingInvoice(db, jobOrderId).filter((r) => r.id !== except).map(({ id, number, businessDate, totalCents }) => ({ id, number, date: businessDate, totalCents }));
 type ReleaseRow = { id: string; number: string; date: string; status: string; totalCents: number; jobOrderId: string; jobOrderNumber: string; customerName: string;
   invoiceId: string | null; invoiceRecordNumber: string | null; invoiceNumber: string | null };
 const releasePick = ({ invoiceId, invoiceRecordNumber, invoiceNumber, ...r }: ReleaseRow) => ({
@@ -186,13 +191,23 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     return rows.map(releasePick);
   });
 
-  /** One release with what goes on the booklet for it (read-only): the invoice record form's "write these on the booklet". */
-  app.get<{ Params: { id: string } }>('/api/jo/releases/:id/invoice-info', { config: { permission: 'jo.view' } }, async (req) => {
+  /**
+   * One release with what goes on the booklet for it (read-only): the invoice record form's "write these on the booklet".
+   * `others`: the job order's other releases with no invoice yet, and those already on this release's own invoice (when it
+   * is being edited), to put on the same invoice; `also`: the ones ticked, which the figures then include (Nov 2026).
+   */
+  app.get<{ Params: { id: string }; Querystring: { also?: string } }>('/api/jo/releases/:id/invoice-info', { config: { permission: 'jo.view' } }, async (req) => {
     const row = db.prepare(`${RELEASES} WHERE r.document_id = ?`).get(req.params.id) as ReleaseRow | undefined;
     if (!row) throw notFound('The release');
     const r = releaseDoc.load(db, row.id);
-    const f = invoiceFigures(db, r.jobOrderId, r.lines, today(clock));
-    return { release: releasePick(row), lines: r.lines, booklet: bookletOf(f), depositAppliedCents: f.depositAppliedCents };
+    const own = row.invoiceId ? (db.prepare(`SELECT d.id, d.number, d.business_date AS date, d.total_cents AS totalCents FROM jo_invoice_record_releases x
+      JOIN documents d ON d.id = x.release_id WHERE x.document_id = ? ORDER BY d.number`).all(row.invoiceId) as { id: string; number: string; date: string; totalCents: number }[]) : [];
+    const others = [...own, ...uninvoiced(db, r.jobOrderId, row.id)].sort((a, b) => a.number.localeCompare(b.number));
+    const ticked = new Set(releaseIds.parse((req.query.also ?? '').split(',').filter(Boolean)));
+    const also = others.filter((o) => ticked.has(o.id));
+    const lines = [...linesOfReleases(db, also.map((o) => o.id)), ...r.lines];
+    const f = invoiceFigures(db, r.jobOrderId, lines, today(clock));
+    return { release: releasePick(row), lines, booklet: bookletOf(f), depositAppliedCents: f.depositAppliedCents, others };
   });
 
   /** A customer's groups and active wearers with the size on file, for the job order form's roster (read-only). */
@@ -203,11 +218,14 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
    * (D4.4). In downpayment VAT mode C the booklet shows the sale less the downpayments already invoiced (D3).
    */
   app.post('/api/jo/releases/preview', { config: { permission: 'jo.release' } }, async (req) => {
-    const body = z.object({ release: z.unknown() }).strict().parse(req.body);
+    const body = z.object({ release: z.unknown(), alsoReleaseIds: releaseIds.optional() }).strict().parse(req.body);
     const release = previewDocument({ db, clock }, releaseDoc, actorOf(req), body.release);
     const r = release.doc as Release;
-    const f = invoiceFigures(db, r.jobOrderId, r.lines, today(clock));
-    return { release: { ...release, journal: undefined }, booklet: bookletOf(f), depositAppliedCents: f.depositAppliedCents };
+    // The job order's earlier releases with no invoice yet (the owner's request, Nov 2026): the ones ticked go on this invoice too.
+    const waiting = r.jobOrderId ? uninvoiced(db, r.jobOrderId) : [];
+    const also = waiting.filter((w) => body.alsoReleaseIds?.includes(w.id)).map((w) => w.id);
+    const f = invoiceFigures(db, r.jobOrderId, [...linesOfReleases(db, also), ...r.lines], today(clock));
+    return { release: { ...release, journal: undefined }, booklet: bookletOf(f), depositAppliedCents: f.depositAppliedCents, uninvoiced: waiting };
   });
 
   /** Records the release (REL-) and, unless the invoice is to follow, its invoice record, in one transaction. */
@@ -222,7 +240,10 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
       const prior = findIdempotent(db, key, actor.userId, hash);
       if (prior) return prior;
       const release = postDocument(env, releaseDoc, actor, { input: body.release, expectedTotalCents: body.expectedTotalCents });
-      const invoice = body.invoice && postDocument(env, invoiceRecordDoc, actor, { input: { ...body.invoice, releaseId: release.id }, expectedTotalCents: body.expectedTotalCents });
+      // An invoice that also covers earlier releases (Nov 2026) adds their recorded totals to this release's.
+      const earlier = body.invoice?.alsoReleaseIds?.length
+        ? db.prepare('SELECT COALESCE(SUM(total_cents), 0) FROM documents WHERE id IN (SELECT value FROM json_each(?))').pluck().get(JSON.stringify(body.invoice.alsoReleaseIds)) as number : 0;
+      const invoice = body.invoice && postDocument(env, invoiceRecordDoc, actor, { input: { ...body.invoice, releaseId: release.id }, expectedTotalCents: body.expectedTotalCents + earlier });
       const res = { status: 200, body: { release, invoiceRecord: invoice } };
       storeIdempotent(db, key, actor.userId, 'POST /api/jo/releases', hash, res, stamp(clock));
       return res;

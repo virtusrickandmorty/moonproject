@@ -273,11 +273,12 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
 
 /* ---------- Invoice record ---------- */
 
-export function invoiceInput(v: { releaseId: string; invoiceNumber: string; note: string }): { input: { releaseId: string; invoiceNumber: string; note?: string }; errors: string[] } {
+/** `also`: earlier releases of the same job order on this invoice too (the owner's request, Nov 2026). */
+export function invoiceInput(v: { releaseId: string; invoiceNumber: string; note: string; also?: string[] }): { input: { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; note?: string }; errors: string[] } {
   const errors: string[] = [];
   if (!v.releaseId) errors.push('Pick the release by its number.');
   if (!/^\d+$/.test(v.invoiceNumber.trim())) errors.push('Type the invoice number from the booklet (digits only).');
-  return { input: { releaseId: v.releaseId, invoiceNumber: v.invoiceNumber.trim(), ...optional('note', v.note) }, errors };
+  return { input: { releaseId: v.releaseId, ...(v.also?.length ? { alsoReleaseIds: v.also } : {}), invoiceNumber: v.invoiceNumber.trim(), ...optional('note', v.note) }, errors };
 }
 
 /* ---------- Downpayment invoice (mode C) ---------- */

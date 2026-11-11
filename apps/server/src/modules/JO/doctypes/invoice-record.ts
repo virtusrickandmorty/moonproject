@@ -12,6 +12,9 @@
  * oldest first up to G, and its balance due reads straight from the ledger.
  * Cancel (plain or for an edit): the mirror, then settleJobOrder: what was paid on this invoice becomes deposits of the JO
  * again, Dr 1201 / Cr 2201 (D6), and 2209 follows the deposits; an edit's replacement applies them as deposits.
+ * One invoice for several releases (the owner's request, Nov 2026): `alsoReleaseIds` are earlier releases of the same job
+ * order with no invoice yet, written on the same booklet invoice; the sale is all of their lines (jo_invoice_record_releases,
+ * read through the jo_invoice_covers view).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -38,6 +41,8 @@ export const INVOICE_SERIES = { key: 'IR', prefix: 'IR-' };
 export const invoiceRecordInput = z
   .object({
     releaseId: z.uuid(),
+    // Earlier releases of the same job order with no invoice yet, on this invoice too (the owner's request, Nov 2026).
+    alsoReleaseIds: z.array(z.uuid()).min(1).max(50).optional(),
     // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7).
     invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
     note: z.string().trim().min(1).max(500).optional(),
@@ -90,6 +95,8 @@ export function invoiceFigures(db: Db, jobOrderId: string, lines: readonly Relea
 
 export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof invoiceFigures> {
   releaseNumber: string;
+  /** Every release on the invoice, by number: its own and the others (one when it covers only its own). */
+  releaseNumbers: string[];
   jobOrderId: string;
   jobOrderNumber: string;
   customerId: string;
@@ -99,7 +106,18 @@ export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof inv
 }
 
 const releaseHeader = (db: Db, id: string) =>
-  db.prepare(`SELECT d.number, d.status FROM jo_releases r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?`).get(id) as { number: string; status: string } | undefined;
+  db.prepare(`SELECT d.number, d.status, r.job_order_id AS jobOrderId FROM jo_releases r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?`)
+    .get(id) as { number: string; status: string; jobOrderId: string } | undefined;
+
+/** The recorded invoice that covers a release (its own release or one of the others on it), if any. */
+export const invoiceCovering = (db: Db, releaseId: string) =>
+  db.prepare(`SELECT d.id, d.number, i.invoice_number AS invoiceNumber FROM jo_invoice_covers c JOIN jo_invoice_records i ON i.document_id = c.document_id
+    JOIN documents d ON d.id = c.document_id WHERE c.release_id = ? AND d.status = 'posted' ORDER BY d.number LIMIT 1`)
+    .get(releaseId) as { id: string; number: string; invoiceNumber: string } | undefined;
+
+/** The lines of several releases, in the order given; a release that is not found adds none. */
+export const linesOfReleases = (db: Db, ids: readonly string[]): ReleaseLine[] =>
+  ids.flatMap((id) => (releaseHeader(db, id) ? releaseDoc.load(db, id).lines : []));
 
 /** The document that used a booklet invoice number, cancelled ones included. Releases, quick sales and asset sales (FA) share one booklet. */
 export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { number: string; status: string } | undefined {
@@ -131,16 +149,19 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   compute(input, ctx) {
     const header = releaseHeader(ctx.db, input.releaseId);
     const rel = header ? releaseDoc.load(ctx.db, input.releaseId) : undefined;
-    const figures = invoiceFigures(ctx.db, rel?.jobOrderId ?? '', rel?.lines ?? [], ctx.businessDate);
+    const also = input.alsoReleaseIds ?? [];
+    const lines = [...linesOfReleases(ctx.db, also), ...(rel?.lines ?? [])];
+    const figures = invoiceFigures(ctx.db, rel?.jobOrderId ?? '', lines, ctx.businessDate);
     return {
       ...input,
       ...figures,
       releaseNumber: header?.number ?? '?',
+      releaseNumbers: [...also.map((id) => releaseHeader(ctx.db, id)?.number ?? '?'), header?.number ?? '?'].sort(),
       jobOrderId: rel?.jobOrderId ?? '',
       jobOrderNumber: rel?.jobOrderNumber ?? '?',
       customerId: rel?.customerId ?? '',
       customerName: rel?.customerName ?? '?',
-      lines: rel?.lines ?? [],
+      lines,
       totalCents: figures.grossCents,
     };
   },
@@ -153,10 +174,21 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     const rel = releaseHeader(ctx.db, doc.releaseId);
     if (!rel) error('releaseId', 'RELEASE', 'Pick the release this invoice is for.');
     else if (rel.status !== 'posted') error('releaseId', 'RELEASE_CANCELLED', `${rel.number} is cancelled. Record the invoice for the release that replaced it.`);
-    const other = ctx.db
-      .prepare(`SELECT d.number, i.invoice_number FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.release_id = ? AND d.status = 'posted'`)
-      .get(doc.releaseId) as { number: string; invoice_number: string } | undefined;
-    if (other) error('releaseId', 'ALREADY_INVOICED', `${doc.releaseNumber} already has invoice no. ${other.invoice_number} (${other.number}). Cancel that one first to record another.`);
+    const other = invoiceCovering(ctx.db, doc.releaseId);
+    if (other) error('releaseId', 'ALREADY_INVOICED', `${doc.releaseNumber} already has invoice no. ${other.invoiceNumber} (${other.number}). Cancel that one first to record another.`);
+    // The other releases on this invoice: recorded, of the same job order, with no invoice yet, each once.
+    const also = doc.alsoReleaseIds ?? [];
+    if (new Set([...also, doc.releaseId]).size !== also.length + 1) error('alsoReleaseIds', 'RELEASE_TWICE', 'A release is on the list twice. Pick each release once.');
+    for (const id of also) {
+      const a = releaseHeader(ctx.db, id);
+      if (!a) error('alsoReleaseIds', 'RELEASE', 'One of the other releases was not found. Pick them again.');
+      else if (a.status !== 'posted') error('alsoReleaseIds', 'RELEASE_CANCELLED', `${a.number} is cancelled, so it cannot go on this invoice.`);
+      else if (rel && a.jobOrderId !== rel.jobOrderId) error('alsoReleaseIds', 'OTHER_JOB_ORDER', `${a.number} is of another job order. One invoice is for the releases of one job order.`);
+      else {
+        const has = invoiceCovering(ctx.db, id);
+        if (has) error('alsoReleaseIds', 'ALREADY_INVOICED', `${a.number} already has invoice no. ${has.invoiceNumber} (${has.number}).`);
+      }
+    }
     const used = invoiceNumberUsedBy(ctx.db, doc.invoiceNumber);
     if (used) {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
@@ -180,6 +212,8 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       doc.listCents, doc.discountCents, doc.grossCents, doc.vatCents, doc.discountNetCents,
       doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.depositAppliedCents + doc.dpAppliedCents, doc.note ?? null,
     );
+    const also = db.prepare('INSERT INTO jo_invoice_record_releases (document_id, release_id) VALUES (?, ?)');
+    for (const id of doc.alsoReleaseIds ?? []) also.run(h.documentId, id);
     if (doc.depositVatCents !== 0 || doc.depositVatBaseCents !== 0 || doc.dpAppliedCents !== 0) {
       const dpNetCents = doc.dpAppliedCents - doc.dpVatAppliedCents;
       recordDepositVat(db, h.documentId, 'original', [
@@ -200,7 +234,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     // A class's own sale can come out a centavo below zero when the downpayment invoices' VAT rounded down: it is then a debit.
     const credit = (cents: number) => (cents >= 0 ? { creditCents: cents } : { debitCents: -cents });
     return {
-      memo: `Sale to ${doc.customerName}, invoice no. ${doc.invoiceNumber} (${doc.jobOrderNumber}, ${doc.releaseNumber})`,
+      memo: `Sale to ${doc.customerName}, invoice no. ${doc.invoiceNumber} (${doc.jobOrderNumber}, ${(doc.releaseNumbers ?? [doc.releaseNumber]).join(', ')})`,
       lines: [
         { account: { role: 'AR_TRADE' }, party, ref, debitCents: doc.grossCents - doc.dpAppliedCents, memo: `Invoice no. ${doc.invoiceNumber}` },
         { account: { role: 'SALES_DISCOUNTS' }, party, debitCents: doc.discountNetCents, memo: 'Discount shown on the invoice' },
@@ -237,6 +271,8 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     if (!r) throw new Error(`Invoice record ${documentId} not found`);
     const { note, mto, rtw, service, ...rest } = r;
     const rel = releaseDoc.load(db, r.releaseId);
+    const also = db.prepare(`SELECT x.release_id FROM jo_invoice_record_releases x JOIN documents d ON d.id = x.release_id WHERE x.document_id = ? ORDER BY d.number`)
+      .pluck().all(documentId) as string[];
     const row = depositVatRowsOf(db, documentId)[0];
     const dpAppliedCents = 0 - (row?.dpInvoicedCents ?? 0);
     const dpVatAppliedCents = 0 - (row?.dpVatCents ?? 0);
@@ -246,6 +282,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     return {
       ...rest,
       ...(note ? { note } : {}),
+      ...(also.length ? { alsoReleaseIds: also } : {}),
       depositAppliedCents: r.depositAppliedCents - dpAppliedCents,
       depositVatCents: 0 - (row?.depositVatCents ?? 0),
       depositVatBaseCents: 0 - (row?.depositBaseCents ?? 0),
@@ -256,15 +293,18 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       vatableSalesCents: r.grossCents - r.vatCents,
       salesCents,
       releaseNumber: releaseHeader(db, r.releaseId)!.number,
+      releaseNumbers: [...also, r.releaseId].map((id) => releaseHeader(db, id)!.number).sort(),
       jobOrderNumber: rel.jobOrderNumber,
-      lines: rel.lines,
+      lines: [...linesOfReleases(db, also), ...rel.lines],
       totalCents: r.grossCents,
     };
   },
 
-  toInput: ({ releaseId, invoiceNumber, note }) => ({ releaseId, invoiceNumber, ...(note ? { note } : {}) }),
+  toInput: ({ releaseId, alsoReleaseIds, invoiceNumber, note }) => ({ releaseId, ...(alsoReleaseIds?.length ? { alsoReleaseIds } : {}), invoiceNumber, ...(note ? { note } : {}) }),
 
   summary(doc) {
+    const numbers = doc.releaseNumbers ?? [doc.releaseNumber];
+    const releases = numbers.length > 1 ? `${numbers.slice(0, -1).join(', ')} and ${numbers.at(-1)}` : doc.releaseNumber;
     const discount = doc.discountCents > 0 ? `, discount ${formatPeso(doc.discountCents)} shown` : '';
     const applied = doc.depositAppliedCents > 0 ? ` ${formatPeso(doc.depositAppliedCents)} of deposits is applied;` : '';
     const left = doc.depositAppliedCents > 0 || doc.dpAppliedCents > 0 ? `${applied} ${formatPeso(doc.grossCents - doc.depositAppliedCents - doc.dpAppliedCents)} is left to collect.` : '';
@@ -272,9 +312,9 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     const sale = `${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount})`;
     if (doc.dpAppliedCents > 0) {
       const b = doc.booklet;
-      return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${doc.releaseNumber} of ${doc.jobOrderNumber}: a sale of ${sale}, less ${formatPeso(doc.dpAppliedCents)} of downpayments already invoiced (mode C), so the invoice shows ${formatPeso(b.grossCents)} (VATable sales ${formatPeso(b.vatableSalesCents)}, VAT ${formatPeso(b.vatCents)}).${left}`;
+      return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${releases} of ${doc.jobOrderNumber}: a sale of ${sale}, less ${formatPeso(doc.dpAppliedCents)} of downpayments already invoiced (mode C), so the invoice shows ${formatPeso(b.grossCents)} (VATable sales ${formatPeso(b.vatableSalesCents)}, VAT ${formatPeso(b.vatCents)}).${left}`;
     }
-    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${doc.releaseNumber} of ${doc.jobOrderNumber}: ${sale}.${vatOnDeposits}${left}`;
+    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${releases} of ${doc.jobOrderNumber}: ${sale}.${vatOnDeposits}${left}`;
   },
 
   arbitrary(db) {
@@ -312,7 +352,7 @@ export function awaitingInvoice(db: Db, jobOrderId?: string) {
     .prepare(
       `SELECT d.id, d.number, d.business_date AS businessDate, r.job_order_id AS jobOrderId, d.total_cents AS totalCents FROM jo_releases r JOIN documents d ON d.id = r.document_id
        WHERE d.status = 'posted' AND (@jo IS NULL OR r.job_order_id = @jo) AND d.total_cents > 0 -- a ₱0 release (free alteration, ALT) has nothing to invoice
-         AND NOT EXISTS (SELECT 1 FROM jo_invoice_records i JOIN documents x ON x.id = i.document_id WHERE i.release_id = r.document_id AND x.status = 'posted')
+         AND NOT EXISTS (SELECT 1 FROM jo_invoice_covers c JOIN documents x ON x.id = c.document_id WHERE c.release_id = r.document_id AND x.status = 'posted')
        ORDER BY d.number`,
     )
     .all({ jo: jobOrderId ?? null }) as { id: string; number: string; businessDate: string; jobOrderId: string; totalCents: number }[];

@@ -68,7 +68,7 @@ it('release preview and final Record keep the same pieces, claimant and booklet 
   change(f.field('Invoice number (from the booklet)'), ' 0012 ');
   await f.find('children', 'Record').props.onClick();
   const release = { jobOrderId: 'jo1', lines: [{ lineNo: 1, qty: 2 }], claimedBy: 'Sample Person', idSeen: 'government_id' };
-  expect(preview).toHaveBeenLastCalledWith(release);
+  expect(preview).toHaveBeenLastCalledWith(release, []); // no earlier releases waiting for an invoice
   await f.render().find((n) => n.props.onRecord)!.props.onRecord('test-key');
   expect(post).toHaveBeenLastCalledWith({ release, invoice: { invoiceNumber: '0012' } }, 60000, 'test-key');
 });

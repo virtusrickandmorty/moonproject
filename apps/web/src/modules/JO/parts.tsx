@@ -1,6 +1,6 @@
 /** Pieces the release slip and invoice record forms share: pick a job order or a release by its number, and the booklet figures. */
 import { useEffect, useState } from 'react';
-import { api, type BookletShown, type CatItem, type JoPick, type ReleasePick } from '../../api.ts';
+import { api, type BookletShown, type CatItem, type JoPick, type ReleasePick, type Uninvoiced } from '../../api.ts';
 import { Button, Field, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { Figures } from '../COL/parts.tsx';
 
@@ -76,6 +76,26 @@ export function ReleasePicker({ value, onChange, preset = '' }: { value: Release
  * "Write these on the booklet" (D4.4). In mode C, when downpayments were invoiced, the sale less "Less downpayments invoiced" is
  * what the balance invoice shows (the server sends those figures); in mode B, the VAT already booked on the deposits is said.
  */
+/**
+ * The job order's earlier releases with no invoice yet, ticked to go on this invoice too (the owner's request, Nov 2026):
+ * one booklet invoice for them all. Ticked to start with.
+ */
+export function AlsoOnInvoice({ list, ticked, onChange }: { list: Uninvoiced[]; ticked: string[]; onChange: (ids: string[]) => void }) {
+  if (!list.length) return null;
+  return (
+    <fieldset className="space-y-1 rounded-md bg-amber-50 p-3 ring-1 ring-amber-200">
+      <legend className="sr-only">Earlier releases on this invoice too</legend>
+      <p className="text-sm font-medium">Released before with no invoice yet: put on this invoice too</p>
+      {list.map((r) => (
+        <label key={r.id} className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={ticked.includes(r.id)} onChange={(e) => onChange(e.target.checked ? [...ticked, r.id] : ticked.filter((x) => x !== r.id))} />
+          <span>{r.number} · released {showDate(r.date)} · <span className="tabular-nums">{peso(r.totalCents)}</span></span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 export function Booklet({ b, depositAppliedCents }: { b: BookletShown; depositAppliedCents?: number }) {
   const dp = b.downpaymentsInvoicedCents ?? 0;
   return (
