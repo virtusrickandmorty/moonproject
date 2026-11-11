@@ -11,6 +11,8 @@
  * While the form is filled in, a summary floats beside it (the owner's request, Nov 2026): a panel on the right on a computer,
  * a bar at the bottom of a phone that opens the whole summary. It counts the players, each item's pieces by size, the sizes
  * still to pick, and a member's own share. A team's coach may list the players in Excel instead (TeamSheet.tsx).
+ * A set (top and lower) may be one size on top and another below; the shop's note and pictures of the design show at the
+ * top (the owner's request, Nov 2026).
  */
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
@@ -23,6 +25,7 @@ import { TeamSheet } from './TeamSheet.tsx';
 export interface LinkPage {
   kind: OlkKind; title: string; closesOn: string; closedOn?: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
   prices?: { lineNo: number; tiers: { fromQty: number; unitPriceCents: number }[] }[]; pay?: OlkPayHow | null; // each pays their own share
+  note?: string; pictures?: string[]; // the shop's note and the design pictures' ids
 }
 type Mine = OlkAnswer & { share?: OlkShare; payments?: OlkPayment[]; orders?: CustomerOrder[] };
 /** The price each for this many: the largest tier reached; null when the item has no price on the list. */
@@ -32,7 +35,8 @@ export function priceFor(tiers: { fromQty: number; unitPriceCents: number }[] | 
 }
 export interface PersonForm {
   row: number; name: string; backName: string; number: string; gender: OlkGender | ''; measureAtShop: boolean;
-  pieces: Record<number, { qty: string; size: string }>; measures: Record<string, string>; own: Record<string, string>; // own: `${lineNo}:${field}` for one item
+  // lower: a set's lower size when it differs from the top ('' is the same as the top)
+  pieces: Record<number, { qty: string; size: string; lower?: string }>; measures: Record<string, string>; own: Record<string, string>; // own: `${lineNo}:${field}` for one item
 }
 interface Details { name: string; gender: OlkGender | ''; mobile: string; email: string; address: string }
 
@@ -62,7 +66,7 @@ const blankPerson = (row: number, items: OlkItem[], gender: OlkGender | '' = '')
 });
 const personFrom = (p: OlkPerson, items: OlkItem[]): PersonForm => ({
   row: p.row, name: p.name ?? '', backName: p.backName ?? '', number: p.number ?? '', gender: p.gender, measureAtShop: p.measureAtShop,
-  pieces: Object.fromEntries(items.map((it) => { const pc = p.pieces.find((x) => x.lineNo === it.lineNo); return [it.lineNo, { qty: pc ? String(pc.qty) : '0', size: pc?.customFit ? CUSTOM : pc?.size ?? '' }]; })),
+  pieces: Object.fromEntries(items.map((it) => { const pc = p.pieces.find((x) => x.lineNo === it.lineNo); return [it.lineNo, { qty: pc ? String(pc.qty) : '0', size: pc?.customFit ? CUSTOM : pc?.size ?? '', lower: pc?.lowerSize ?? '' }]; })),
   measures: Object.fromEntries(Object.entries(p.measures).map(([k, v]) => [k, String(v)])),
   own: Object.fromEntries(p.itemMeasures.map((m) => [`${m.lineNo}:${m.field}`, String(m.value)])),
 });
@@ -95,7 +99,8 @@ function toAnswer(link: LinkPage, d: Details, people: PersonForm[]): { body: unk
       if (!Number.isInteger(qty) || qty < 0 || qty > 100) return { problem: `${who}: type how many ${it.name} (0 to 100).` };
       if (it.sizing === 'size' && !pc.size) return { problem: `${who}: pick the size for ${it.name}.` };
       const custom = it.sizing === 'size' && !!it.customFit && pc.size === CUSTOM;
-      pieces.push({ lineNo: it.lineNo, qty, ...(custom ? { customFit: true } : it.sizing === 'size' ? { size: pc.size } : {}) });
+      const lower = it.isSet && !custom && pc.lower && pc.lower !== pc.size ? { lowerSize: pc.lower } : {};
+      pieces.push({ lineNo: it.lineNo, qty, ...(custom ? { customFit: true } : it.sizing === 'size' ? { size: pc.size, ...lower } : {}) });
     }
     if (!pieces.length) return { problem: `${who}: at least one piece.` };
     const measures: Record<string, number> = {};
@@ -198,6 +203,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   if (sent) return (
     <Frame title={link.title}>
       {ordered && sent.orders!.map((o) => <OrderStatus key={o.number} order={o} />)}
+      {!ordered && <LinkIntro link={link} token={token} />}
       {!link.open && !ordered && <p className="rounded-2xl bg-indigo-50 p-5 text-indigo-900">The shop is making your job order from these details. Open this link again to see where your order is.</p>}
       <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5" aria-live="polite">
         {fresh ? <>
@@ -227,6 +233,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   return (
     <Frame title={link.title} intro={`${team ? 'Give your details, then each player: the name on the back, the number and the size of each piece.' : 'Give your details and the pieces you want, with your size or measurements.'} Open until ${day(link.closesOn)}.`}
       aside={<div className="sticky top-4 rounded-3xl bg-white p-5 ring-1 ring-slate-900/5"><SoFar link={link} tally={tally} /></div>}>
+      <LinkIntro link={link} token={token} />
       {editing && personal && <p className="rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">You are changing the answer you sent. Save to keep the changes.</p>}
       <form id="olk-form" onSubmit={(e) => void submit(e)} className="space-y-5" noValidate>
         <Card title={team ? 'Your details (the coach or the one in charge)' : 'Your details'}>
@@ -307,7 +314,8 @@ export function tallyOf(link: LinkPage, people: PersonForm[]): Tally {
       const n = Number(pc?.qty) || 0;
       if (n <= 0) continue;
       qty += n;
-      const label = it.sizing === 'measure' ? 'Made to measurements' : pc!.size === CUSTOM ? 'Custom fit' : pc!.size ? pc!.size : '';
+      const label = it.sizing === 'measure' ? 'Made to measurements' : pc!.size === CUSTOM ? 'Custom fit'
+        : pc!.size ? (it.isSet && pc!.lower && pc!.lower !== pc!.size ? `${pc!.size} top, ${pc!.lower} lower` : pc!.size) : '';
       if (!label) unpicked += n;
       by.set(label || 'Size not picked yet', (by.get(label || 'Size not picked yet') ?? 0) + n);
     }
@@ -411,26 +419,76 @@ function Pieces({ link, person, gender, onChange }: { link: LinkPage; person: Pe
           <div key={it.lineNo} className="flex flex-wrap items-end gap-3 py-3">
             <div className="min-w-0 flex-1 basis-40">
               <p className="font-semibold">{it.name}</p>
-              <p className="text-xs text-slate-500">{it.sizing === 'size' && pc.size !== CUSTOM ? `Standard size${cut ? `, ${cut} cut` : ''}${it.customFit ? ', or a custom fit' : ''}`
+              <p className="text-xs text-slate-500">{it.sizing === 'size' && pc.size !== CUSTOM ? `Standard size${cut ? `, ${cut} cut` : ''}${it.customFit ? ', or a custom fit' : ''}${it.isSet ? '. The top and the lower part may be different sizes.' : ''}`
                 : pc.size === CUSTOM ? 'Custom fit: made to your measurements below' : 'Made to your measurements'}</p>
               {link.prices && ((each) => <p className="text-sm font-semibold text-slate-700">{each === null ? 'Price from the shop' : `${formatPeso(each)} each`}</p>)(priceFor(link.prices.find((x) => x.lineNo === it.lineNo)?.tiers, Number(pc.qty) || 1))}
             </div>
             <label className="w-20"><span className="text-xs text-slate-500">How many</span>
               <input className={box} inputMode="numeric" value={pc.qty} onChange={(e) => set({ qty: e.target.value.replace(/\D/g, '').slice(0, 3) })} aria-label={`How many ${it.name}`} /></label>
             {it.sizing === 'size' && (
-              <label className={it.customFit ? 'w-full sm:w-60' : 'w-32'}><span className="text-xs text-slate-500">Size</span>
-                <select className={box} value={pc.size} onChange={(e) => set({ size: e.target.value })} disabled={pc.qty === '0' || !pc.qty} aria-label={`Size of ${it.name}`}>
+              <label className={it.isSet && pc.size !== CUSTOM ? (it.customFit ? 'w-[calc(50%-0.375rem)] sm:w-60' : 'w-[calc(50%-0.375rem)] sm:w-36') : it.customFit ? 'w-full sm:w-60' : 'w-32'}><span className="text-xs text-slate-500">{it.isSet && pc.size !== CUSTOM ? 'Top size' : 'Size'}</span>
+                <select className={box} value={pc.size} onChange={(e) => set({ size: e.target.value })} disabled={pc.qty === '0' || !pc.qty} aria-label={it.isSet ? `Top size of ${it.name}` : `Size of ${it.name}`}>
                   <option value="">Pick…</option>
-                  {(['adult', 'kids'] as const).map((c) => link.sizes.some((s) => s.category === c) && (
-                    <optgroup key={c} label={c === 'adult' ? 'Adult' : 'Kids'}>{link.sizes.filter((s) => s.category === c).map((s) => <option key={s.label} value={s.label}>{s.label}</option>)}</optgroup>
-                  ))}
+                  {sizeOptions(link)}
                   {it.customFit && <option value={CUSTOM}>Custom fit (my measurements)</option>}
+                </select></label>
+            )}
+            {/* A set: the lower part may be another size (the owner's request, Nov 2026); the same as the top unless picked. */}
+            {it.sizing === 'size' && it.isSet && pc.size !== CUSTOM && (
+              <label className="w-[calc(50%-0.375rem)] sm:w-48"><span className="text-xs text-slate-500">Lower size</span>
+                <select className={box} value={pc.lower ?? ''} onChange={(e) => set({ lower: e.target.value })} disabled={pc.qty === '0' || !pc.qty} aria-label={`Lower size of ${it.name}`}>
+                  <option value="">{pc.size ? `Same as the top (${pc.size})` : 'Same as the top'}</option>
+                  {sizeOptions(link)}
                 </select></label>
             )}
           </div>
         );
       })}
     </div>
+  );
+}
+
+/** The shop's sizes, adult then kids. */
+const sizeOptions = (link: LinkPage) => (['adult', 'kids'] as const).map((c) => link.sizes.some((s) => s.category === c) && (
+  <optgroup key={c} label={c === 'adult' ? 'Adult' : 'Kids'}>{link.sizes.filter((s) => s.category === c).map((s) => <option key={s.label} value={s.label}>{s.label}</option>)}</optgroup>
+));
+
+/** A set's sizes in words: "Top L · Lower M" when they differ. */
+export const setSizeWords = (size: string | undefined, lower: string | undefined, qty: number) =>
+  lower && size && lower !== size ? [`Top ${size} · Lower ${lower}`, qty > 1 ? pcs(qty) : ''].filter(Boolean).join(' · ') : null;
+
+/**
+ * The shop's note and the pictures of the design, at the top of the link (the owner's request, Nov 2026). A picture opens
+ * full size on a tap.
+ */
+function LinkIntro({ link, token }: { link: LinkPage; token: string }) {
+  const [big, setBig] = useState<string | null>(null);
+  const pics = link.pictures ?? [];
+  if (!link.note && !pics.length) return null;
+  const src = (id: string) => `/api/olk/l/${encodeURIComponent(token)}/pictures/${encodeURIComponent(id)}`;
+  return (
+    <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-slate-900/5" aria-label="From the shop">
+      {link.note && <div className="rounded-2xl bg-amber-50 p-4 text-amber-950 ring-1 ring-amber-200">
+        <p className="text-sm font-semibold text-amber-800">A note from the shop</p>
+        <p className="mt-1 whitespace-pre-line">{link.note}</p>
+      </div>}
+      {pics.length > 0 && <div>
+        <p className="mb-2 text-sm font-semibold text-slate-600">{pics.length === 1 ? 'The design' : 'The design (tap a picture to see it bigger)'}</p>
+        <ul className={`grid gap-3 ${pics.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+          {pics.map((id, i) => (
+            <li key={id}><button type="button" className="block w-full overflow-hidden rounded-2xl bg-slate-50 ring-1 ring-slate-200" onClick={() => setBig(id)} aria-label={`See design picture ${i + 1} bigger`}>
+              <img src={src(id)} alt={`Design picture ${i + 1}`} loading="lazy" className={`w-full object-contain ${pics.length === 1 ? 'max-h-[28rem]' : 'aspect-square'}`} />
+            </button></li>
+          ))}
+        </ul>
+      </div>}
+      {big && (
+        <div role="dialog" aria-modal="true" aria-label="Design picture" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-4" onClick={() => setBig(null)}>
+          <img src={src(big)} alt="Design picture" className="max-h-full max-w-full rounded-xl object-contain" />
+          <button type="button" className="absolute right-4 top-4 rounded-full bg-white px-4 py-2 font-bold text-slate-900" onClick={() => setBig(null)}>Close</button>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -531,7 +589,7 @@ function Summary({ link, answer }: { link: LinkPage; answer: OlkAnswer }) {
                 {p.pieces.map((pc) => (
                   <li key={pc.lineNo} className="flex items-center justify-between gap-3 py-1.5">
                     <span className="min-w-0">{name(pc.lineNo)}</span>
-                    <span className="shrink-0 rounded-full bg-white px-3 py-0.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">{sizeWords(pc.size, !!pc.customFit, pc.qty)}</span>
+                    <span className="shrink-0 rounded-full bg-white px-3 py-0.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">{setSizeWords(pc.size, pc.lowerSize, pc.qty) ?? sizeWords(pc.size, !!pc.customFit, pc.qty)}</span>
                   </li>
                 ))}
               </ul>

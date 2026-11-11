@@ -20,7 +20,8 @@ function columns(link: LinkPage) {
   const label = (it: LinkPage['items'][number]) => (names.filter((n) => n === it.name).length > 1 ? `${it.name} (item ${it.lineNo})` : it.name);
   const need = new Set(link.items.filter((it) => it.sizing === 'measure' || it.customFit).flatMap((it) => it.fields));
   return {
-    items: link.items.map((it) => ({ it, qty: `${label(it)}: how many`, size: it.sizing === 'size' ? `${label(it)}: size` : null })),
+    items: link.items.map((it) => ({ it, qty: `${label(it)}: how many`, size: it.sizing === 'size' ? `${label(it)}: ${it.isSet ? 'top size' : 'size'}` : null,
+      lower: it.sizing === 'size' && it.isSet ? `${label(it)}: lower size (if not the same)` : null })),
     measures: link.guide.filter((g) => need.has(g.key)).map((g) => ({ g, head: `${g.label} (inches)` })),
   };
 }
@@ -28,19 +29,23 @@ function columns(link: LinkPage) {
 /** The template for this link: the players already on the form (with a name on the back) come filled in. */
 export function teamSheet(link: LinkPage, people: PersonForm[], custom: string): SheetSpec {
   const cols = columns(link);
-  const header = [BACK, NUMBER, FULL, GENDER, ...cols.items.flatMap((c) => (c.size ? [c.qty, c.size] : [c.qty])), ...cols.measures.map((m) => m.head)];
+  const header = [BACK, NUMBER, FULL, GENDER, ...cols.items.flatMap((c) => [c.qty, ...(c.size ? [c.size] : []), ...(c.lower ? [c.lower] : [])]), ...cols.measures.map((m) => m.head)];
   const rows = people.filter((p) => p.backName.trim()).map((p) => [
     p.backName.trim().toUpperCase(), p.number, p.name, p.gender === 'female' ? 'Female' : p.gender === 'male' ? 'Male' : '',
-    ...cols.items.flatMap(({ it, size }) => {
+    ...cols.items.flatMap(({ it, size, lower }) => {
       const pc = p.pieces[it.lineNo] ?? { qty: '', size: '' };
-      return size ? [pc.qty, pc.size === custom ? CUSTOM_WORDS : pc.size] : [pc.qty];
+      return [pc.qty, ...(size ? [pc.size === custom ? CUSTOM_WORDS : pc.size] : []), ...(lower ? [pc.lower ?? ''] : [])];
     }),
     ...cols.measures.map((m) => p.measures[m.g.key] ?? ''),
   ]);
   const sizeChoices = (it: LinkPage['items'][number]) => [...link.sizes.map((s) => s.label), ...(it.customFit ? [CUSTOM_WORDS] : [])];
   let col = 4;
   const lists = [{ col: 3, choices: ['Female', 'Male'] }];
-  for (const c of cols.items) { col++; if (c.size) { lists.push({ col, choices: sizeChoices(c.it) }); col++; } }
+  for (const c of cols.items) {
+    col++;
+    if (c.size) { lists.push({ col, choices: sizeChoices(c.it) }); col++; }
+    if (c.lower) { lists.push({ col, choices: link.sizes.map((s) => s.label) }); col++; }
+  }
   return {
     name: 'Players', header, rows, listRows: MAX_PLAYERS, lists,
     widths: header.map((h) => Math.min(30, Math.max(12, h.length + 2))),
@@ -73,7 +78,7 @@ export function peopleFromRows(link: LinkPage, rows: string[][], blank: (row: nu
     const gender: OlkGender | '' = ['f', 'female', 'babae', 'woman', 'women', 'girl'].includes(g) ? 'female' : ['m', 'male', 'lalaki', 'man', 'men', 'boy'].includes(g) ? 'male' : '';
     if (g && !gender) notes.push(`Row ${line}: pick Female or Male on the form ("${get(iGender)}" is neither).`);
     p.gender = gender;
-    for (const { it, qty, size } of cols.items) {
+    for (const { it, qty, size, lower } of cols.items) {
       const q = get(find(qty)).replace(/\.0+$/, '');
       const n = q === '' ? '1' : /^\d{1,3}$/.test(q) ? q : '1';
       if (q !== '' && !/^\d{1,3}$/.test(q)) notes.push(`Row ${line}: "${q}" for how many ${it.name} is not a number; 1 was put.`);
@@ -85,7 +90,14 @@ export function peopleFromRows(link: LinkPage, rows: string[][], blank: (row: nu
         else if (typed && it.customFit && ['custom fit', 'custom'].includes(norm(typed))) s = custom;
         else if (typed) notes.push(`Row ${line}: size "${typed}" for ${it.name} is not on the shop's list; pick it on the form.`);
       }
-      p.pieces[it.lineNo] = { qty: n, size: s };
+      let low = '';
+      if (lower) {
+        const typed = get(find(lower));
+        const hit = link.sizes.find((x) => norm(x.label) === norm(typed));
+        if (hit && s !== custom) low = hit.label === s ? '' : hit.label;
+        else if (typed) notes.push(`Row ${line}: lower size "${typed}" for ${it.name} is not on the shop's list; pick it on the form.`);
+      }
+      p.pieces[it.lineNo] = { qty: n, size: s, ...(lower ? { lower: low } : {}) };
     }
     for (const m of cols.measures) { const v = get(find(m.head)); if (v) p.measures[m.g.key] = v; }
     people.push(p);

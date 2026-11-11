@@ -491,10 +491,11 @@ export interface CustomerOrder {
 export type OlkKind = 'team' | 'group';
 export type OlkGender = 'female' | 'male';
 /** customFit: a standard-size item that also lets a person pick "Custom fit" and give the measurements in fields instead. */
-export interface OlkItem { lineNo: number; itemId?: string; name: string; sizing: 'size' | 'measure'; customFit?: boolean; fields: string[] }
+/** isSet: a set on the price list (an upper and a lower part), whose lower part may be another size (Nov 2026). */
+export interface OlkItem { lineNo: number; itemId?: string; name: string; sizing: 'size' | 'measure'; customFit?: boolean; isSet?: boolean; fields: string[] }
 export interface OlkPerson {
   row: number; name?: string; backName?: string; number?: string; gender: OlkGender; measureAtShop: boolean;
-  pieces: { lineNo: number; qty: number; size?: string; customFit?: boolean }[]; measures: Record<string, number>; itemMeasures: { lineNo: number; field: string; value: number }[];
+  pieces: { lineNo: number; qty: number; size?: string; lowerSize?: string; customFit?: boolean }[]; measures: Record<string, number>; itemMeasures: { lineNo: number; field: string; value: number }[];
 }
 export interface OlkAnswer { id: string; name: string; gender: OlkGender; mobile: string; email: string; address: string; createdAt: string; updatedAt: string; changes: number; people: OlkPerson[] }
 /** A member's share when each pays their own: their pieces at the price for their quantity (total null: an item has no price). */
@@ -505,6 +506,8 @@ export interface OlkPayHow { bankName: string; accountName: string; accountHint:
 export interface OlkLinkRow { id: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; answers: number; people: number; createdAt: string }
 export interface OlkLinkDetail {
   id: string; token: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; payOwn: boolean; version: number;
+  /** The note and the design pictures (their ids) the customer sees at the top of the link. */
+  note: string; pictures: string[];
   customer: { id: string; name: string } | null; items: OlkItem[]; responses: (OlkAnswer & { checks: string[]; made: OlkMade[]; share?: OlkShare; payments: OlkPayment[] })[];
   totals: { lineNo: number; name: string; sizes: { size: string; qty: number }[]; qty: number }[]; guide: { key: string; label: string }[];
 }
@@ -517,7 +520,7 @@ export interface OlkJobOrder {
   lines: { itemId: string; kind: 'made_to_order' | 'service' | 'ready_made'; description: string; isSet: boolean; qty: number; listCents: number | null;
     roster: { personId?: string; name: string; sizeMode: 'preset' | 'measured'; size?: string; lowerSize?: string; jerseyName?: string; jerseyNumber?: string; qty: number; notes?: string }[] }[];
 }
-export interface OlkLinkInput { kind: OlkKind; title: string; customerId?: string; closesOn: string; payOwn: boolean; items: { itemId: string; sizing: 'size' | 'measure'; customFit: boolean; fields: string[] }[] }
+export interface OlkLinkInput { kind: OlkKind; title: string; customerId?: string; closesOn: string; payOwn: boolean; note?: string; items: { itemId: string; sizing: 'size' | 'measure'; customFit: boolean; fields: string[] }[] }
 export interface EstItem { code: string; name: string; class: string; unit: 'pc' | 'set'; isActive: boolean }
 
 /** A Production worker sign-in for the floor app, and the employee it is linked to now. */
@@ -1462,6 +1465,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     olkLink: (id: string) => call<OlkLinkDetail>('GET', `/api/olk/links/${encodeURIComponent(id)}`),
     olkCreate: (body: OlkLinkInput) => call<OlkLinkDetail & { token: string }>('POST', '/api/olk/links', body),
     olkClose: (id: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/close`, {}),
+    olkSetNote: (id: string, note: string) => call<OlkLinkDetail>('PUT', `/api/olk/links/${encodeURIComponent(id)}/note`, { note }),
+    olkAddPicture: (id: string, picture: { name: string; data: string }) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/pictures`, picture),
+    olkRemovePicture: (id: string, pictureId: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/pictures/${encodeURIComponent(pictureId)}/remove`, {}),
     olkClosesOn: (id: string, closesOn: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/closes-on`, { closesOn }),
     olkJobOrder: (id: string, body: { responseIds: string[]; together: boolean; customerId?: string }) => call<OlkJobOrder>('POST', `/api/olk/links/${encodeURIComponent(id)}/job-order`, body),
     olkPayJobOrders: (paymentId: string) => call<{ id: string; number: string; customerName: string; totalCents: number; dueDate: string }[]>('GET', `/api/olk/payments/${encodeURIComponent(paymentId)}/job-orders`),
