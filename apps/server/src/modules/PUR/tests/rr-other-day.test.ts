@@ -3,6 +3,7 @@
  * receiving report, dated the day they came (today or earlier, as the delivery receipt says), never after today.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
+import { manilaDate } from '@moonproject/shared';
 import { grantRole, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 
 let env: TestEnv;
@@ -14,7 +15,7 @@ beforeEach(async () => {
   accountant = await env.as('accountant');
 });
 
-const dayBefore = (d: string, days: number) => new Date(Date.parse(`${d}T00:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
+const dayBefore = (d: string, days: number) => manilaDate(new Date(Date.parse(`${d}T00:00:00+08:00`) - days * 86_400_000));
 
 describe('receiving the rest of an order on another day', () => {
   it('a second report for the lines still to come, dated the day they came; never a day after today', async () => {
