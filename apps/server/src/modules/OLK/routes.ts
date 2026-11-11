@@ -8,6 +8,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { searchCatalogItems } from '../CAT/public.ts';
 import { searchCustomers } from '../CUS/public.ts';
 import { prepareJobOrder } from './job-orders.ts';
+import { changeEntry, myEntry, playerInvite, removeEntry, sendEntry, stampOnList, startTeamList, teamList } from './team.ts';
 import { MAX_PROOF_BYTES, acceptPayment, b64, jobOrdersFor, linkPay, memberPay, paymentNotReceived, paymentPicture, sendPayment, staffPay } from './payments.ts';
 import { MAX_LINK_PICTURE_BYTES, MEASURES, MEASURE_PRESETS, addPicture, changeAnswer, closeLink, createLink, linkDetail, linkPicture, listLinks, myAnswer, ordersOf, publicLink, removePicture, setClosingDate, setNote, submitAnswer } from './links.ts';
 
@@ -59,6 +60,37 @@ export function olkRoutes(app: FastifyInstance, deps: AppDeps): void {
     noStore(reply);
     return { ...publicLink(db, req.params.token, today(clock)), ...linkPay(db, req.params.token, today(clock)) };
   });
+  // A team list the players fill in for the coach (the owner's request, Nov 2026): the coach's list, and each player's own row.
+  const ctxOf = (req: FastifyRequest) => ({ at: stamp(clock), today: today(clock), ip: req.ip, hourAgo: stamp({ now: () => new Date(clock.now().getTime() - 3_600_000) }) });
+  app.post<{ Params: { token: string } }>('/api/olk/l/:token/team', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return tx(db, () => startTeamList(db, req.params.token, req.body, ctxOf(req)));
+  });
+  app.get<{ Params: { token: string; key: string } }>('/api/olk/l/:token/team/:key', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return teamList(db, req.params.token, req.params.key);
+  });
+  app.post<{ Params: { token: string; key: string; id: string } }>('/api/olk/l/:token/team/:key/entries/:id/remove', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return tx(db, () => removeEntry(db, req.params.token, req.params.key, req.params.id, stamp(clock)));
+  });
+  app.get<{ Params: { token: string; pt: string } }>('/api/olk/l/:token/players/:pt', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return playerInvite(db, req.params.token, req.params.pt);
+  });
+  app.post<{ Params: { token: string; pt: string } }>('/api/olk/l/:token/players/:pt', { bodyLimit: 64 * 1024, config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return tx(db, () => sendEntry(db, req.params.token, req.params.pt, req.body, ctxOf(req)));
+  });
+  app.get<{ Params: { token: string; pt: string; key: string } }>('/api/olk/l/:token/players/:pt/:key', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return myEntry(db, req.params.token, req.params.pt, req.params.key);
+  });
+  app.put<{ Params: { token: string; pt: string; key: string } }>('/api/olk/l/:token/players/:pt/:key', { bodyLimit: 64 * 1024, config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return tx(db, () => changeEntry(db, req.params.token, req.params.pt, req.params.key, req.body, { at: stamp(clock), today: today(clock) }));
+  });
+
   /** A picture of the design, through the link's own token. */
   app.get<{ Params: { token: string; pid: string } }>('/api/olk/l/:token/pictures/:pid', { config: { permission: 'public' } }, async (req, reply) => {
     const f = linkPicture(db, req.params.pid, req.params.token);
@@ -69,6 +101,7 @@ export function olkRoutes(app: FastifyInstance, deps: AppDeps): void {
     const now = clock.now().getTime();
     return tx(db, () => {
       const a = submitAnswer(db, req.params.token, req.body, { at: stamp(clock), today: today(clock), ip: req.ip, hourAgo: stamp({ now: () => new Date(now - 3_600_000) }) });
+      stampOnList(db, req.params.token, req.body, stamp(clock));
       return { ...a, ...memberPay(db, req.params.token, a, today(clock)) };
     });
   });
@@ -81,6 +114,7 @@ export function olkRoutes(app: FastifyInstance, deps: AppDeps): void {
     noStore(reply);
     return tx(db, () => {
       const a = changeAnswer(db, req.params.token, req.params.key, req.body, { at: stamp(clock), today: today(clock) });
+      stampOnList(db, req.params.token, req.body, stamp(clock));
       return { ...a, ...memberPay(db, req.params.token, a, today(clock)) };
     });
   });
