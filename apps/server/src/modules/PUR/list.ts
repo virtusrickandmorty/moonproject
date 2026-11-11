@@ -12,7 +12,7 @@ import { AppError, isBusinessDate } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { today } from '../../platform/clock.ts';
-import { poLines } from './lookups.ts';
+import { billOf, poLines, poPayment } from './lookups.ts';
 import { fromHundredths, lineCents, lineCentsSql, toHundredths } from './qty.ts';
 import { requestStatus, type RequestState } from './requests.ts';
 
@@ -58,9 +58,6 @@ function filtersOf(kind: Kind, query: Filters): { where: string; params: Record<
   return { where: ['d.doc_type = @docType', ...each, '(@from IS NULL OR d.business_date >= @from)', '(@to IS NULL OR d.business_date <= @to)'].join(' AND '), params };
 }
 
-/** The recorded supplier bill that names a receiving report (AP's ap_bills, read-only, as the lookups read it). */
-const billOf = (db: Db, rrId: string) => (db.prepare(`SELECT d.id, d.number FROM ap_bills b JOIN documents d ON d.id = b.document_id
-  WHERE b.receiving_report_id = ? AND d.status = 'posted' ORDER BY d.number LIMIT 1`).get(rrId) as { id: string; number: string } | undefined) ?? null;
 
 /** A purchase order's progress: pieces ordered and received (no more than ordered, per line), deliveries and those billed, and what is still to come at its costs. */
 export function poProgress(db: Db, poId: string) {
@@ -92,7 +89,8 @@ function extras(db: Db, kind: Kind, id: string, posted: boolean, date: string): 
     const h = db.prepare(`SELECT s.name AS supplierName, po.expected_date AS expectedDate, rd.number AS requestNumber, po.request_id AS requestId
       FROM pur_purchase_orders po JOIN pur_suppliers s ON s.id = po.supplier_id LEFT JOIN documents rd ON rd.id = po.request_id WHERE po.document_id = ?`).get(id) as Record<string, string | null>;
     const p = poProgress(db, id);
-    return { ...h, ...p, late: posted && !!h.expectedDate && h.expectedDate < date && p.receivedQty < p.orderedQty };
+    // Paid or still to pay on its bills (the owner's request, Nov 2026).
+    return { ...h, ...p, late: posted && !!h.expectedDate && h.expectedDate < date && p.receivedQty < p.orderedQty, payment: posted ? poPayment(db, id, date) : null };
   }
   const h = db.prepare(`SELECT s.name AS supplierName, pd.id AS poId, pd.number AS poNumber FROM pur_receiving_reports r JOIN documents pd ON pd.id = r.po_document_id
     JOIN pur_purchase_orders po ON po.document_id = r.po_document_id JOIN pur_suppliers s ON s.id = po.supplier_id WHERE r.document_id = ?`).get(id) as Record<string, string>;

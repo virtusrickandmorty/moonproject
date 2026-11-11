@@ -18,6 +18,20 @@ export function Badge({ tone, children }: { tone: string; children: ReactNode })
   return <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>{children}</span>;
 }
 
+/**
+ * Paid or still to pay (the owner's request, Nov 2026): green Paid, amber "₱X to pay, due …", red "₱X overdue".
+ * `owedCents` undefined: not known, nothing shown.
+ */
+export function PayBadge({ owedCents, dueDate, overdue, today }: { owedCents: number | undefined; dueDate?: string | null; overdue?: boolean; today?: string }) {
+  if (owedCents === undefined) return null;
+  if (owedCents <= 0) return <Badge tone="bg-emerald-100 text-emerald-800">Paid</Badge>;
+  const late = overdue ?? (!!dueDate && !!today && dueDate < today);
+  const peso = `₱${(owedCents / 100).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (late) return <Badge tone="bg-red-100 text-red-800">{peso} overdue</Badge>;
+  return <Badge tone="bg-amber-100 text-amber-800">{peso} to pay{dueDate ? `, due ${new Date(`${dueDate}T00:00:00+08:00`).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric' })}` : ''}</Badge>;
+}
+export const manilaToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+
 export const RequestBadge = ({ state }: { state: PurchaseRequestStatus['state'] }) => <Badge tone={REQUEST_STATE[state][1]}>{REQUEST_STATE[state][0]}</Badge>;
 
 /** A step of the purchase's journey: done, the one it is at, or still to come; `note` says how far (part received). */

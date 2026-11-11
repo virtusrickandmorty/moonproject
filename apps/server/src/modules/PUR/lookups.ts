@@ -7,6 +7,8 @@ import type { FastifyInstance } from 'fastify';
 import { notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
+import { resolveAccount } from '../../engine/ledger/accounts.ts';
+import { accountBalance } from '../../engine/ledger/queries.ts';
 import { fromHundredths } from './qty.ts';
 
 export interface PoLine { lineNo: number; supplyId: string; supplyName: string; unit: string; orderedQty: number; receivedQty: number; remainingQty: number; unitCostCents: number }
@@ -29,9 +31,32 @@ export function poLines(db: Db, poId: string): PoLine[] {
   return rows.map((r) => ({ ...r, orderedQty: fromHundredths(r.orderedQty), receivedQty: fromHundredths(r.receivedQty), remainingQty: fromHundredths(Math.max(0, r.orderedQty - r.receivedQty)) }));
 }
 
-/** The recorded supplier bill that names a receiving report, if any (AP's ap_bills, read-only, as receivedNotBilledForReport does). */
-const billOf = (db: Db, rrId: string) => (db.prepare(`SELECT d.id, d.number FROM ap_bills b JOIN documents d ON d.id = b.document_id
-  WHERE b.receiving_report_id = ? AND d.status = 'posted' ORDER BY d.number LIMIT 1`).get(rrId) as { id: string; number: string } | undefined) ?? null;
+/**
+ * The recorded supplier bill that names a receiving report, if any (AP's ap_bills, read-only, as receivedNotBilledForReport does),
+ * with what is still owed on it from the ledger (its accounts payable credit less the payments and advances applied: the
+ * owner's request, Nov 2026, to see whether it is paid) and its due date.
+ */
+export const billOf = (db: Db, rrId: string) => {
+  const b = db.prepare(`SELECT d.id, d.number, b.due_date AS dueDate FROM ap_bills b JOIN documents d ON d.id = b.document_id
+    WHERE b.receiving_report_id = ? AND d.status = 'posted' ORDER BY d.number LIMIT 1`).get(rrId) as { id: string; number: string; dueDate: string } | undefined;
+  return b ? { ...b, owedCents: -accountBalance(db, resolveAccount(db, { role: 'AP' }).id, { refDocId: b.id }) } : null;
+};
+
+/**
+ * Whether a purchase order's bills are paid (the owner's request, Nov 2026): how many of its deliveries have a bill, what is
+ * still owed on them, and whether any is past its due date (`date`: today).
+ */
+export function poPayment(db: Db, poId: string, date: string) {
+  const bills = (db.prepare(`SELECT d.id FROM pur_receiving_reports r JOIN documents d ON d.id = r.document_id WHERE r.po_document_id = ? AND d.status = 'posted'`)
+    .pluck().all(poId) as string[]).flatMap((id) => { const b = billOf(db, id); return b ? [b] : []; });
+  const open = bills.filter((b) => b.owedCents > 0);
+  return {
+    bills: bills.length,
+    owedCents: open.reduce((n, b) => n + b.owedCents, 0),
+    overdue: open.some((b) => b.dueDate < date),
+    nextDue: open.map((b) => b.dueDate).sort()[0] ?? null,
+  };
+}
 
 /** What recorded supplier advances paid on a purchase order (AP's ap_advances, read-only): never more than the order (Oct 2026). */
 const advancedOn = (db: Db, poId: string) => db.prepare(`SELECT COALESCE(SUM(a.amount_cents), 0) FROM ap_advances a JOIN documents d ON d.id = a.document_id

@@ -16,6 +16,7 @@ import { DocList, openedFrom, type ListForm, type ListView } from './generic/Doc
 import { JobOrderForm } from './modules/JO/JobOrderForm.tsx';
 import { QuickSaleForm } from './modules/QS/QuickSaleForm.tsx';
 import { PURCHASING_LISTS } from './modules/PUR/lists.tsx';
+import { billList } from './modules/AP/lists.tsx';
 import { JOB_ORDER_SEARCH, jobOrderActions, jobOrderColumns, jobOrderDetail, JobOrderFigures, jobOrderOthers, jobOrderScan, jobOrderSource, jobOrderSummary } from './modules/JO/list.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
@@ -106,6 +107,7 @@ function Stages() {
     ['/docs/:type', (_, t) => withEntriesView(t.key, <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
       {...(t.key === 'pur.po' || t.key === 'pur.request' || t.key === 'pur.rr' || t.key === 'jo.opening' || t.key === 'quo.quotation' || t.key === 'qs.sale' ? { formSize: 'screen' as const } : {})}
       {...(PURCHASING_LISTS[t.key] ?? {})}
+      {...(t.key === 'ap.bill' ? billList : {})}
       {...(t.key === 'jo.job_order' ? { pageSize: 20, formSize: 'screen' as const, searchTools: jobOrderScan, others: jobOrderOthers(stage.docTypes, (t, mode) => <Form type={t} me={stage.me} mode={mode} />), source: jobOrderSource, columns: jobOrderColumns, detail: jobOrderDetail, summary: jobOrderSummary(manilaDate(new Date())), summaryHead: 'Customer and order', head: <JobOrderFigures />, searchHint: JOB_ORDER_SEARCH, rowActions: jobOrderActions(stage.docTypes) } : {})}
       opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order' || t.key === 'pur.po' || t.key === 'pur.request' || t.key === 'pur.rr' || t.key === 'jo.opening' || t.key === 'qs.sale'}
       form={t.canCreate || (t.canPost && t.canCancel) ? ({ mode, close, setDirty, show }: Parameters<ListForm>[0]) => (mode.kind === 'new' ? t.canCreate : t.canPost && t.canCancel)
