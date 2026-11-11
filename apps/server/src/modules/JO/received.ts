@@ -17,6 +17,20 @@ export const receivedInput = z.object({ receivedBy: z.string().trim().min(1).max
 export const latestReceived = (db: Db, documentId: string) => db.prepare('SELECT received_by AS receivedBy, received_on AS receivedOn FROM jo_release_received WHERE document_id = ? ORDER BY id DESC LIMIT 1')
   .get(documentId) as { receivedBy: string; receivedOn: string } | undefined;
 
+/**
+ * The job order's recorded releases with who got them (the owner's request, Nov 2026: on the job order's own page): who
+ * claimed it in person and the ID seen, or, sent for delivery, who received it once typed.
+ */
+export function releasesWithReceiver(db: Db, jobOrderId: string) {
+  const rows = db.prepare(`SELECT d.id, d.number, d.business_date AS date, r.claimed_by AS claimedBy, r.id_seen AS idSeen, r.for_delivery AS forDelivery,
+      (SELECT COALESCE(SUM(l.qty), 0) FROM jo_release_lines l WHERE l.document_id = d.id) AS pieces
+    FROM jo_releases r JOIN documents d ON d.id = r.document_id WHERE r.job_order_id = ? AND d.status = 'posted' ORDER BY d.business_date, d.number`)
+    .all(jobOrderId) as { id: string; number: string; date: string; claimedBy: string; idSeen: string; forDelivery: number; pieces: number }[];
+  return rows.map(({ claimedBy, idSeen, forDelivery, ...r }) => forDelivery
+    ? { ...r, forDelivery: true as const, ...latestReceived(db, r.id) }
+    : { ...r, forDelivery: false as const, claimedBy, idSeen });
+}
+
 /** The job order's releases sent for delivery whose receiver is not typed yet (recorded ones only), oldest first. */
 export const awaitingReceiver = (db: Db, jobOrderId: string) => db.prepare(`SELECT d.id, d.number, d.business_date AS date FROM jo_releases r JOIN documents d ON d.id = r.document_id
   WHERE r.job_order_id = ? AND r.for_delivery = 1 AND d.status = 'posted' AND NOT EXISTS (SELECT 1 FROM jo_release_received x WHERE x.document_id = r.document_id)

@@ -14,7 +14,7 @@ import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, rosterOf, stagesAll } from './public.ts';
 import { finishedWearers, lineProduction } from '../PRD/public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
-import { OUT_FOR_DELIVERY, isOutForDelivery, recordReceived } from './received.ts';
+import { OUT_FOR_DELIVERY, isOutForDelivery, recordReceived, releasesWithReceiver } from './received.ts';
 import { joListRoutes } from './list.ts';
 import { lineState, releasableQty, releaseDoc, releasedWearers, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
@@ -119,7 +119,7 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     return {
       jobOrder, stage, stageLabel, moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id),
       depositVat: depositVatOf(db, jo, today(clock)), dpInvoices: dpInvoicesOf(db, req.params.id),
-      stockPlace,
+      stockPlace, releases: releasesWithReceiver(db, req.params.id),
     };
   });
 

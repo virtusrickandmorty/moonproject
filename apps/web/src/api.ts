@@ -315,6 +315,9 @@ export interface JoStatus {
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean; readyQty?: number; awaitingSteps?: boolean;
     wearers?: { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedOn: string | null; ready: boolean | null }[] }[];
   awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
+  /** Its recorded releases and who got them: claimed in person (the ID seen), or sent for delivery (who received it, once typed). */
+  releases?: ({ id: string; number: string; date: string; pieces: number } & (
+    { forDelivery: false; claimedBy: string; idSeen: string } | { forDelivery: true; receivedBy?: string; receivedOn?: string }))[];
   depositVat: JoDepositVat;
   dpInvoices: DpInvoiceRow[];
 }

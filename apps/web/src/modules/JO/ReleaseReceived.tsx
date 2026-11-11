@@ -3,8 +3,10 @@
  * and typed again to put it right. A release claimed in person already says who, so this shows only on one for delivery.
  */
 import { useEffect, useState } from 'react';
-import { api, type DocDetail } from '../../api.ts';
+import { api, type DocDetail, type JoStatus } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, showDate, useAction } from '../../components/ui.tsx';
+import { Link } from '../../router.tsx';
+import { docPath } from '../../shell/menu.ts';
 
 type Received = { receivedBy: string; receivedOn: string };
 
@@ -28,6 +30,39 @@ function ReceivedDialog({ id, number, wentOut, now, onClose, onSaved }: { id: st
     {a.error && <Notice>{a.error}</Notice>}
     <div className="flex justify-end gap-2"><Button onClick={onClose}>Go back</Button><Button tone="primary" disabled={a.busy || !name.trim() || !date} onClick={() => void save()}>Save</Button></div>
   </Dialog>;
+}
+
+const ID_WORDS: Record<string, string> = { government_id: 'government ID seen', school_id: 'school ID seen', company_id: 'company ID seen', other_id: 'an ID seen', none: 'no ID seen' };
+
+/**
+ * The job order's releases and who got each (the owner's request, Nov 2026), on the job order's own page: claimed in person
+ * by whom, or delivered and received by whom; a delivery with nobody typed yet can be typed here.
+ */
+export function JoReleases({ releases, may, onSaved }: { releases: NonNullable<JoStatus['releases']>; may: boolean; onSaved: () => void }) {
+  const [open, setOpen] = useState<(typeof releases)[number] | null>(null);
+  if (releases.length === 0) return null;
+  const pcs = (n: number) => `${n} ${n === 1 ? 'piece' : 'pieces'}`;
+  return <Panel title="Released to">
+    <ul className="divide-y divide-slate-100 text-sm">
+      {releases.map((r) => (
+        <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
+          <span className="min-w-0">
+            <Link to={docPath('jo.release', `/${r.id}`)} className="font-medium text-indigo-700 hover:underline">{r.number}</Link>
+            <span className="text-slate-500"> · {showDate(r.date)} · {pcs(r.pieces)}</span>
+            <span className="block">
+              {!r.forDelivery ? <>Claimed by <b>{r.claimedBy}</b> <span className="text-slate-500">({ID_WORDS[r.idSeen] ?? r.idSeen})</span></>
+                : r.receivedBy ? <>Delivered · received by <b>{r.receivedBy}</b>{r.receivedOn && <span className="text-slate-500"> on {showDate(r.receivedOn)}</span>}</>
+                : <span className="font-medium text-amber-800">Sent for delivery · who received it is not typed yet</span>}
+            </span>
+          </span>
+          {may && r.forDelivery && <Button onClick={() => setOpen(r)}>{r.receivedBy ? 'Change' : 'Type who received it'}</Button>}
+        </li>
+      ))}
+    </ul>
+    {open && open.forDelivery && <ReceivedDialog id={open.id} number={open.number} wentOut={open.date}
+      now={open.receivedBy && open.receivedOn ? { receivedBy: open.receivedBy, receivedOn: open.receivedOn } : null}
+      onClose={() => setOpen(null)} onSaved={() => { setOpen(null); onSaved(); }} />}
+  </Panel>;
 }
 
 export function ReleaseReceived({ d }: { d: DocDetail }) {
