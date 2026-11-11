@@ -47,3 +47,16 @@ it('says plainly when the file is not the template or has no players', () => {
   expect(peopleFromRows(link, [['Name', 'Size'], ['CRUZ', 'L']], blank, CUSTOM)).toMatchObject({ problem: expect.stringContaining('not the shop\'s template') });
   expect(peopleFromRows(link, [['Name on the back', 'Number'], ['', '']], blank, CUSTOM)).toMatchObject({ problem: expect.stringContaining('no players yet') });
 });
+
+it("gives a set a top size and a lower size column, the lower one only when it differs", () => {
+  const sets = { ...link, items: [{ lineNo: 1, name: 'Jersey set', sizing: 'size', isSet: true, fields: [] }] } as unknown as LinkPage;
+  const one = (row: number): PersonForm => ({ ...blank(row), pieces: { 1: { qty: '1', size: '' } } });
+  const spec = teamSheet(sets, [{ ...one(1), backName: 'CRUZ', pieces: { 1: { qty: '1', size: 'L', lower: 'M' } } }], CUSTOM);
+  expect(spec.header.slice(4)).toEqual(['Jersey set: how many', 'Jersey set: top size', 'Jersey set: lower size (if not the same)']);
+  expect(spec.rows).toEqual([['CRUZ', '', '', '', '1', 'L', 'M']]);
+  expect(spec.lists?.slice(1)).toEqual([{ col: 5, choices: ['S', 'M', 'L'] }, { col: 6, choices: ['S', 'M', 'L'] }]);
+  const got = peopleFromRows(sets, [spec.header, ['CRUZ', '', '', '', '', 'L', 'm'], ['REYES', '', '', '', '', 'M', 'M'], ['LIM', '', '', '', '', 'S', 'XXL']], one, CUSTOM);
+  if ('problem' in got) throw new Error(got.problem);
+  expect(got.people.map((p) => p.pieces[1])).toEqual([{ qty: '1', size: 'L', lower: 'M' }, { qty: '1', size: 'M', lower: '' }, { qty: '1', size: 'S', lower: '' }]);
+  expect(got.notes).toEqual(['Row 4: lower size "XXL" for Jersey set is not on the shop\'s list; pick it on the form.']);
+});

@@ -9,6 +9,7 @@ import { formatPesos, manilaDate } from '@moonproject/shared';
 import { api, type Me, type OlkGuide, type OlkJobOrder, type OlkLinkDetail, type OlkLinkInput, type OlkLinkRow, type OlkPayment, type OlkShare } from '../../api.ts';
 import { navigate, useLocation } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
+import { base64, prepare } from '../../shop/Support.tsx';
 import { emptyJo, emptyJoLine, oneOff, type JoValues } from '../JO/forms.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, inputClass, manilaTime, peso, showDate, useAction } from '../../components/ui.tsx';
 
@@ -87,6 +88,7 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
   const [title, setTitle] = useState('');
   const [closesOn, setClosesOn] = useState(inDays(today, 14));
   const [payOwn, setPayOwn] = useState(false);
+  const [note, setNote] = useState('');
   const [customer, setCustomer] = useState<{ id: string; name: string } | null>(null);
   const [items, setItems] = useState<ItemDraft[]>([]);
   const [guide, setGuide] = useState<OlkGuide[]>([]);
@@ -101,7 +103,7 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
   }, [q]);
 
   const setItem = (i: number, c: Partial<ItemDraft>) => setItems(items.map((it, j) => (j === i ? { ...it, ...c } : it)));
-  const body = (): OlkLinkInput => ({ kind, title: title.trim(), closesOn, payOwn: kind === 'group' && payOwn, ...(customer ? { customerId: customer.id } : {}),
+  const body = (): OlkLinkInput => ({ kind, title: title.trim(), closesOn, payOwn: kind === 'group' && payOwn, ...(customer ? { customerId: customer.id } : {}), ...(note.trim() ? { note: note.trim() } : {}),
     items: items.map((it) => {
       const customFit = it.sizing === 'size' && it.customFit;
       return { itemId: it.itemId, sizing: it.sizing, customFit, fields: it.sizing === 'measure' || customFit ? it.fields : [] };
@@ -123,6 +125,9 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
       </div>
       <Field label="Customer (optional)" hint="Leave empty when they are new: their details from the link are used.">
         <CustomerSearch value={customer} onChange={setCustomer} />
+      </Field>
+      <Field label="Note for the customer (optional)" hint="Shown at the top of the link. Add pictures of the design on the link's page after making it.">
+        <textarea className={inputClass} rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Example: Please list every player by Friday. The design is below." />
       </Field>
       {kind === 'group' && (
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5" checked={payOwn} onChange={(e) => setPayOwn(e.target.checked)} />
@@ -234,6 +239,8 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
       )}
       {act.error && <Notice>{act.error}</Notice>}
 
+      <NoteAndPictures d={d} manage={manage} onSaved={setD} />
+
       <Panel title="Totals">
         <table className="w-full text-sm">
           <tbody>{d.totals.map((t) => (
@@ -270,7 +277,7 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
             {d.responses.map((r) => (
               <li key={r.id} className="py-2">
                 <button type="button" className="flex w-full flex-wrap items-baseline justify-between gap-2 text-left" aria-expanded={shown === r.id} onClick={() => setShown(shown === r.id ? null : r.id)}>
-                  <span><b className="text-indigo-700">{r.name}</b> <span className="text-sm text-slate-500">{d.kind === 'team' ? `${r.people.length} players` : r.people[0]?.pieces.map((pc) => `${pc.qty} × ${item(pc.lineNo)?.name}${pc.size ? ` (${pc.size})` : pc.customFit ? ' (custom fit)' : ''}`).join(', ')}</span></span>
+                  <span><b className="text-indigo-700">{r.name}</b> <span className="text-sm text-slate-500">{d.kind === 'team' ? `${r.people.length} players` : r.people[0]?.pieces.map((pc) => `${pc.qty} × ${item(pc.lineNo)?.name}${pc.size ? ` (${pc.lowerSize ? `${pc.size} top, ${pc.lowerSize} lower` : pc.size})` : pc.customFit ? ' (custom fit)' : ''}`).join(', ')}</span></span>
                   <span className="text-xs text-slate-500">{manilaTime(r.updatedAt)}{r.changes ? ` · changed ${r.changes}×` : ''}</span>
                 </button>
                 {r.checks.map((c) => <p key={c} className="text-sm text-amber-700">⚠ {c}</p>)}
@@ -288,7 +295,7 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
                           <tr key={p.row} className="border-t border-slate-100 align-top">
                             {d.kind === 'team' && <><td className="py-1">{p.number}</td><td className="font-medium">{p.backName}</td><td>{p.name}</td></>}
                             <td className="py-1">{p.gender === 'female' ? 'F' : 'M'}</td>
-                            <td>{p.pieces.map((pc) => <div key={pc.lineNo}>{pc.qty} × {item(pc.lineNo)?.name}{pc.size ? ` (${pc.size})` : pc.customFit ? <b className="text-indigo-700"> (custom fit)</b> : ''}</div>)}</td>
+                            <td>{p.pieces.map((pc) => <div key={pc.lineNo}>{pc.qty} × {item(pc.lineNo)?.name}{pc.size ? ` (${pc.lowerSize ? `${pc.size} top, ${pc.lowerSize} lower` : pc.size})` : pc.customFit ? <b className="text-indigo-700"> (custom fit)</b> : ''}</div>)}</td>
                             <td>{p.measureAtShop ? <span className="text-amber-700">Measure at the shop</span> : <>
                               {Object.entries(p.measures).map(([f, v]) => <span key={f} className="mr-2 inline-block">{label(f)} {v}</span>)}
                               {p.itemMeasures.map((m) => <div key={`${m.lineNo}${m.field}`} className="text-indigo-700">{item(m.lineNo)?.name}: {label(m.field)} {m.value}</div>)}
@@ -315,6 +322,48 @@ const paidWords = (p: OlkPayment) => (p.status === 'accepted' && !p.recorded ? '
  * A member's share and payments (each pays their own share). A payment to check: its picture, then Received (pick the
  * member's recorded job order; the collection form opens filled in, to record) or Not received (the member sees why).
  */
+/**
+ * The note and the pictures of the design the customer sees at the top of the link (the owner's request, Nov 2026):
+ * changed any time; a picture is made smaller before it is sent.
+ */
+function NoteAndPictures({ d, manage, onSaved }: { d: OlkLinkDetail; manage: boolean; onSaved: (d: OlkLinkDetail) => void }) {
+  const [note, setNote] = useState(d.note);
+  const act = useAction();
+  useEffect(() => setNote(d.note), [d.id, d.note]);
+  const add = (files: FileList | null) => void act.run(async () => {
+    let last = d;
+    for (const f of [...(files ?? [])].slice(0, Math.max(0, 6 - d.pictures.length))) {
+      const pic = await prepare(f);
+      last = await api.olkAddPicture(d.id, { name: pic.name, data: await base64(pic.blob) });
+    }
+    onSaved(last);
+  });
+  return (
+    <Panel title="Note and design pictures">
+      <p className="text-sm text-slate-600">The customer sees these at the top of the link.</p>
+      {manage ? <>
+        <Field label="Note for the customer"><textarea className={inputClass} rows={3} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+        <Button disabled={act.busy || note.trim() === d.note.trim()} onClick={() => void act.run(async () => onSaved(await api.olkSetNote(d.id, note)))}>Save note</Button>
+      </> : d.note ? <p className="whitespace-pre-line text-sm">{d.note}</p> : <p className="text-sm text-slate-500">No note.</p>}
+      <ul className="grid grid-cols-3 gap-3 sm:grid-cols-5">
+        {d.pictures.map((p, i) => (
+          <li key={p} className="space-y-1">
+            <a href={`/api/olk/pictures/${p}`} target="_blank" rel="noreferrer"><img src={`/api/olk/pictures/${p}`} alt={`Design picture ${i + 1}`} className="aspect-square w-full rounded-lg object-cover ring-1 ring-slate-200" /></a>
+            {manage && <Button tone="danger" disabled={act.busy} onClick={() => void act.run(async () => onSaved(await api.olkRemovePicture(d.id, p)))}>Take off</Button>}
+          </li>
+        ))}
+      </ul>
+      {manage && d.pictures.length < 6 && (
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+          {act.busy ? 'Adding…' : 'Add pictures of the design'}
+          <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" disabled={act.busy} aria-label="Add pictures of the design" onChange={(e) => { add(e.target.files); e.target.value = ''; }} />
+        </label>
+      )}
+      {act.error && <Notice>{act.error}</Notice>}
+    </Panel>
+  );
+}
+
 function Payments({ share, payments, manage, onChanged }: { share?: OlkShare; payments: OlkPayment[]; manage: boolean; onChanged: () => void }) {
   const [picture, setPicture] = useState<string | null>(null);
   const [taking, setTaking] = useState<OlkPayment | null>(null);

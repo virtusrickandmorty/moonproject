@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { AppError, badRequest, conflict, isBusinessDate, newId, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
+import { pictureFile, sha256Hex } from '../../engine/attachments.ts';
 import { catalogItemRef } from '../CAT/public.ts';
 import { customerOrderView, jobOrdersWithWearers, type CustomerOrderView } from '../JO/public.ts';
 import { customerSteps } from '../PRD/public.ts';
@@ -56,12 +57,15 @@ const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
 
 // ---- Staff: the links -------------------------------------------------------------------------------------------------
+const NOTE_MAX = 2000;
 export const linkInput = z.object({
   kind: z.enum(['team', 'group']),
   title: text(3, 120),
   customerId: z.uuid().optional(),
   closesOn: z.string().refine(isBusinessDate, 'Type the date as YYYY-MM-DD.'),
   payOwn: z.boolean().default(false),
+  // A note for the customer at the top of the link (the owner's request, Nov 2026).
+  note: z.string().trim().max(NOTE_MAX).optional(),
   items: z.array(z.object({
     itemId: z.uuid(),
     sizing: z.enum(['size', 'measure']),
@@ -87,8 +91,8 @@ export function createLink(db: Db, raw: unknown, who: Who) {
   });
   const id = newId();
   const token = randomBytes(18).toString('base64url');
-  db.prepare(`INSERT INTO olk_links (id, token, kind, title, customer_id, closes_on, pay_own, created_at, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(id, token, v.kind, v.title, v.customerId ?? null, v.closesOn, +v.payOwn, who.at, who.userId, who.at);
+  db.prepare(`INSERT INTO olk_links (id, token, kind, title, customer_id, closes_on, pay_own, note, created_at, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, token, v.kind, v.title, v.customerId ?? null, v.closesOn, +v.payOwn, v.note || null, who.at, who.userId, who.at);
   const line = db.prepare('INSERT INTO olk_link_items (link_id, line_no, item_id, item_name, sizing, custom_fit) VALUES (?, ?, ?, ?, ?, ?)');
   const field = db.prepare('INSERT INTO olk_item_fields (link_id, line_no, field) VALUES (?, ?, ?)');
   for (const it of items) {
@@ -99,15 +103,66 @@ export function createLink(db: Db, raw: unknown, who: Who) {
   return linkDetail(db, id, who.today);
 }
 
-export type LinkRow = { id: string; token: string; kind: 'team' | 'group'; title: string; customer_id: string | null; closes_on: string; pay_own: number; closed_at: string | null; created_at: string; version: number };
+export type LinkRow = { id: string; token: string; kind: 'team' | 'group'; title: string; customer_id: string | null; closes_on: string; pay_own: number; note: string | null; closed_at: string | null; created_at: string; version: number };
+
+// ---- The note and the design pictures (the owner's request, Nov 2026) -------------------------------------------------
+export const MAX_LINK_PICTURES = 6;
+export const MAX_LINK_PICTURE_BYTES = 4 * 1024 * 1024;
+const noteInput = z.object({ note: z.string().trim().max(NOTE_MAX) }).strict();
+const pictureInput = z.object({ name: z.string().max(200).optional(), data: z.string().min(1).max(Math.ceil(MAX_LINK_PICTURE_BYTES / 3) * 4 + 4) }).strict();
+
+/** The design pictures on a link, oldest first (those taken off are left out). */
+export const linkPictures = (db: Db, linkId: string) =>
+  db.prepare('SELECT id FROM olk_link_pictures WHERE link_id = ? AND removed_at IS NULL ORDER BY added_at, rowid').pluck().all(linkId) as string[];
+
+/** Changes the note the customer sees at the top of the link; empty takes it off. */
+export function setNote(db: Db, id: string, raw: unknown, who: Who) {
+  const v = noteInput.parse(raw);
+  if (!linkRow(db, id)) throw notFound('That order link');
+  db.prepare('UPDATE olk_links SET note = ?, updated_at = ?, version = version + 1 WHERE id = ?').run(v.note || null, who.at, id);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'olk.link.note', entityType: 'olk.link', entityId: id, data: { note: v.note } });
+  return linkDetail(db, id, who.today);
+}
+
+/** Adds a picture of the design (JPEG, PNG or WebP), up to MAX_LINK_PICTURES on a link. */
+export function addPicture(db: Db, id: string, raw: unknown, who: Who & { newId: string }) {
+  const v = pictureInput.parse(raw);
+  if (!linkRow(db, id)) throw notFound('That order link');
+  if (linkPictures(db, id).length >= MAX_LINK_PICTURES) throw conflict('TOO_MANY_PICTURES', `A link shows up to ${MAX_LINK_PICTURES} pictures. Take one off first.`);
+  const pic = pictureFile(Buffer.from(v.data, 'base64'), v.name ?? 'The picture');
+  if ('problem' in pic) throw new AppError('FILE_TYPE', /pixels/.test(pic.problem) ? pic.problem : 'Add a JPEG, PNG or WebP picture of the design.', 415);
+  if (pic.data.length > MAX_LINK_PICTURE_BYTES) throw new AppError('FILE_TOO_BIG', 'The picture is bigger than 4 MB. Add a smaller one.', 413);
+  db.prepare('INSERT INTO olk_link_pictures (id, link_id, content_type, bytes, sha256, data, added_at, added_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(who.newId, id, pic.type, pic.data.length, sha256Hex(pic.data), pic.data, who.at, who.userId);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'olk.link.picture_added', entityType: 'olk.link', entityId: id, data: { picture: who.newId, bytes: pic.data.length } });
+  return linkDetail(db, id, who.today);
+}
+
+/** Takes a picture off the link (it is kept, marked taken off). */
+export function removePicture(db: Db, id: string, pictureId: string, who: Who) {
+  const done = db.prepare('UPDATE olk_link_pictures SET removed_at = ?, removed_by = ? WHERE id = ? AND link_id = ? AND removed_at IS NULL').run(who.at, who.userId, pictureId, id);
+  if (!done.changes) throw notFound('That picture');
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'olk.link.picture_removed', entityType: 'olk.link', entityId: id, data: { picture: pictureId } });
+  return linkDetail(db, id, who.today);
+}
+
+/** A design picture: for staff (any link), or for the customer through the link's own token. */
+export function linkPicture(db: Db, pictureId: string, token?: string) {
+  const f = db.prepare(`SELECT p.content_type AS type, p.data FROM olk_link_pictures p JOIN olk_links l ON l.id = p.link_id
+    WHERE p.id = ? AND p.removed_at IS NULL AND (? IS NULL OR l.token = ?)`).get(pictureId, token ?? null, token ?? null) as { type: string; data: Buffer } | undefined;
+  if (!f) throw notFound('That picture');
+  return f;
+}
 export const linkRow = (db: Db, id: string) => db.prepare('SELECT * FROM olk_links WHERE id = ?').get(id) as LinkRow | undefined;
 const isOpen = (l: LinkRow, today: string) => !l.closed_at && l.closes_on >= today;
 
 export function itemsOf(db: Db, linkId: string) {
   const items = db.prepare('SELECT line_no AS lineNo, item_id AS itemId, item_name AS name, sizing, custom_fit FROM olk_link_items WHERE link_id = ? ORDER BY line_no').all(linkId) as
     { lineNo: number; itemId: string; name: string; sizing: 'size' | 'measure'; custom_fit: number }[];
+  // A set on the price list (an upper and a lower part): in sizes, its lower part may be another size (Nov 2026).
   const fields = db.prepare('SELECT field FROM olk_item_fields WHERE link_id = ? AND line_no = ?').pluck();
-  return items.map(({ custom_fit, ...it }) => ({ ...it, customFit: custom_fit === 1, fields: MEASURE_KEYS.filter((k) => (fields.all(linkId, it.lineNo) as string[]).includes(k)) }));
+  return items.map(({ custom_fit, ...it }) => ({ ...it, customFit: custom_fit === 1, isSet: catalogItemRef(db, it.itemId)?.unit === 'set',
+    fields: MEASURE_KEYS.filter((k) => (fields.all(linkId, it.lineNo) as string[]).includes(k)) }));
 }
 
 /** Staff's list of links, newest first, with how many answered. */
@@ -129,7 +184,7 @@ export function linkDetail(db: Db, id: string, today: string) {
   const totals = items.map((it) => {
     const bySize = new Map<string, number>();
     for (const r of responses) for (const p of r.people) for (const pc of p.pieces) if (pc.lineNo === it.lineNo) {
-      const key = it.sizing === 'size' && !pc.customFit ? pc.size ?? '?'
+      const key = it.sizing === 'size' && !pc.customFit ? (pc.lowerSize ? `${pc.size ?? '?'} top / ${pc.lowerSize} lower` : pc.size ?? '?')
         : pc.customFit ? `Custom fit${p.measureAtShop ? ', measure at the shop' : ''}` : p.measureAtShop ? 'Measure at the shop' : 'Measured';
       bySize.set(key, (bySize.get(key) ?? 0) + pc.qty);
     }
@@ -138,6 +193,7 @@ export function linkDetail(db: Db, id: string, today: string) {
   return {
     id: l.id, token: l.token, kind: l.kind, title: l.title, closesOn: l.closes_on, open: isOpen(l, today), closedEarly: !!l.closed_at, payOwn: l.pay_own === 1,
     customer: l.customer_id ? { id: l.customer_id, name: customerRef(db, l.customer_id)?.display_name ?? '?' } : null, version: l.version,
+    note: l.note ?? '', pictures: linkPictures(db, id),
     items, responses: responses.map((r) => ({ ...r, checks: checksOf(r, l.kind), made: made.get(r.id) ?? [] })), totals,
     guide: MEASURES.map(([key, label]) => ({ key, label })),
   };
@@ -217,8 +273,10 @@ export function publicLink(db: Db, token: string, today: string) {
     kind: l.kind, title: l.title, closesOn: l.closes_on, open: isOpen(l, today), payOwn: l.pay_own === 1,
     // The Manila day the shop closed it early (closed_at is a Manila time stamp), else the day it was set to close.
     closedOn: l.closed_at ? l.closed_at.slice(0, 10) : l.closes_on,
-    items: itemsOf(db, l.id).map(({ lineNo, name, sizing, customFit, fields }) => ({ lineNo, name, sizing, customFit, fields })),
+    items: itemsOf(db, l.id).map(({ lineNo, name, sizing, customFit, isSet, fields }) => ({ lineNo, name, sizing, customFit, ...(isSet && sizing === 'size' ? { isSet } : {}), fields })),
     sizes, guide: MEASURES.map(([key, label, how]) => ({ key, label, how })),
+    // The shop's note and the pictures of the design, at the top of the page (Nov 2026).
+    ...(l.note ? { note: l.note } : {}), pictures: linkPictures(db, l.id),
   };
 }
 
@@ -231,6 +289,7 @@ const personInput = z.object({
   gender: z.enum(['female', 'male']),
   measureAtShop: z.boolean().default(false),
   pieces: z.array(z.object({ lineNo: z.number().int().min(1).max(20), qty: z.number().int().min(1).max(100), size: text(1, 30).optional(),
+    lowerSize: text(1, 30).optional(), // a set's lower part, when it is another size than the top
     customFit: z.boolean().optional() }).strict()).min(1).max(20),
   measures: z.partialRecord(z.enum(MEASURE_KEYS), inches).default({}),
   itemMeasures: z.array(z.object({ lineNo: z.number().int().min(1).max(20), field: z.enum(MEASURE_KEYS), value: inches }).strict()).max(360).default([]),
@@ -270,6 +329,10 @@ function checked(db: Db, l: LinkRow, raw: unknown): AnswerInput & { mobile: stri
       if (pc.customFit && (it.sizing !== 'size' || !it.customFit)) throw badRequest('CUSTOM_FIT', `${who}: ${it.name} has no custom fit. Pick a size.`);
       if (pc.customFit && pc.size) throw badRequest('CUSTOM_FIT', `${who}: ${it.name} is a custom fit or a size, not both.`);
       if (it.sizing === 'size' && !pc.customFit && (!pc.size || !sizes.has(pc.size))) throw badRequest('SIZE', `${who}: pick a size for ${it.name}.`);
+      if (pc.lowerSize !== undefined) {
+        if (!it.isSet || it.sizing !== 'size' || pc.customFit) throw badRequest('LOWER_SIZE', `${who}: ${it.name} has one size, not a top and a lower size.`);
+        if (!sizes.has(pc.lowerSize)) throw badRequest('SIZE', `${who}: pick the lower size for ${it.name}.`);
+      }
       if ((it.sizing === 'measure' || pc.customFit) && !p.measureAtShop) {
         const own = p.measures as Partial<Record<Measure, number>>;
         const missing = it.fields.filter((f) => own[f] === undefined && !p.itemMeasures.some((m) => m.lineNo === it.lineNo && m.field === f));
@@ -283,11 +346,12 @@ function checked(db: Db, l: LinkRow, raw: unknown): AnswerInput & { mobile: stri
 
 function saveVersion(db: Db, responseId: string, version: number, v: AnswerInput) {
   const person = db.prepare('INSERT INTO olk_people (response_id, version, row_no, name, back_name, number, gender, measure_at_shop) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const piece = db.prepare('INSERT INTO olk_pieces (response_id, version, row_no, line_no, qty, size, custom_fit) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  const piece = db.prepare('INSERT INTO olk_pieces (response_id, version, row_no, line_no, qty, size, custom_fit, lower_size) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
   const measure = db.prepare('INSERT INTO olk_measures (response_id, version, row_no, line_no, field, hundredths) VALUES (?, ?, ?, ?, ?, ?)');
   for (const p of v.people) {
     person.run(responseId, version, p.row, p.name ?? null, p.backName?.toUpperCase() ?? null, p.number ?? null, p.gender, +p.measureAtShop);
-    for (const pc of p.pieces) piece.run(responseId, version, p.row, pc.lineNo, pc.qty, pc.size ?? null, +!!pc.customFit);
+    // A set's lower size is kept only when it differs from the top.
+    for (const pc of p.pieces) piece.run(responseId, version, p.row, pc.lineNo, pc.qty, pc.size ?? null, +!!pc.customFit, pc.lowerSize && pc.lowerSize !== pc.size ? pc.lowerSize : null);
     for (const [f, val] of Object.entries(p.measures)) measure.run(responseId, version, p.row, 0, f, Math.round(val * 100));
     // An item's own value only where it differs from the person's (some items vary in length or width).
     for (const m of p.itemMeasures) if ((p.measures as Record<string, number>)[m.field] !== m.value) measure.run(responseId, version, p.row, m.lineNo, m.field, Math.round(m.value * 100));
@@ -374,8 +438,8 @@ export function answerOf(db: Db, id: string) {
     { id: string; name: string; gender: 'female' | 'male'; mobile: string; email: string; address: string; created_at: string; updated_at: string; version: number };
   const people = db.prepare('SELECT * FROM olk_people WHERE response_id = ? AND version = ? ORDER BY row_no').all(id, r.version) as
     { row_no: number; name: string | null; back_name: string | null; number: string | null; gender: 'female' | 'male'; measure_at_shop: number }[];
-  const pieces = db.prepare('SELECT row_no, line_no, qty, size, custom_fit FROM olk_pieces WHERE response_id = ? AND version = ? ORDER BY row_no, line_no').all(id, r.version) as
-    { row_no: number; line_no: number; qty: number; size: string | null; custom_fit: number }[];
+  const pieces = db.prepare('SELECT row_no, line_no, qty, size, custom_fit, lower_size FROM olk_pieces WHERE response_id = ? AND version = ? ORDER BY row_no, line_no').all(id, r.version) as
+    { row_no: number; line_no: number; qty: number; size: string | null; custom_fit: number; lower_size: string | null }[];
   const measures = db.prepare('SELECT row_no, line_no, field, hundredths FROM olk_measures WHERE response_id = ? AND version = ?').all(id, r.version) as
     { row_no: number; line_no: number; field: Measure; hundredths: number }[];
   return {
@@ -383,7 +447,8 @@ export function answerOf(db: Db, id: string) {
     people: people.map((p) => ({
       row: p.row_no, ...(p.name ? { name: p.name } : {}), ...(p.back_name ? { backName: p.back_name } : {}), ...(p.number ? { number: p.number } : {}),
       gender: p.gender, measureAtShop: p.measure_at_shop === 1,
-      pieces: pieces.filter((pc) => pc.row_no === p.row_no).map((pc) => ({ lineNo: pc.line_no, qty: pc.qty, ...(pc.size ? { size: pc.size } : {}), ...(pc.custom_fit ? { customFit: true } : {}) })),
+      pieces: pieces.filter((pc) => pc.row_no === p.row_no).map((pc) => ({ lineNo: pc.line_no, qty: pc.qty, ...(pc.size ? { size: pc.size } : {}),
+        ...(pc.lower_size ? { lowerSize: pc.lower_size } : {}), ...(pc.custom_fit ? { customFit: true } : {}) })),
       measures: Object.fromEntries(measures.filter((m) => m.row_no === p.row_no && m.line_no === 0).map((m) => [m.field, m.hundredths / 100])) as Partial<Record<Measure, number>>,
       itemMeasures: measures.filter((m) => m.row_no === p.row_no && m.line_no > 0).map((m) => ({ lineNo: m.line_no, field: m.field, value: m.hundredths / 100 })),
     })),
