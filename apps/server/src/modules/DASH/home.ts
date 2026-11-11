@@ -7,7 +7,7 @@ import type { SessionUser } from '../../engine/security/sessions.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { placesFor } from '../CASH/public.ts';
-import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '../JO/public.ts';
+import { activeJobOrders, deliveriesAwaitingReceiver, joMoney, joMoneyAll, releasesAwaitingInvoice } from '../JO/public.ts';
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
@@ -385,6 +385,10 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
       const balance = (money ??= joMoneyAll(db)).get(jo.id)!.balanceDueCents;
       if (balance > 0) push('released-balance', jo.id, `${jo.number} was released with a balance`, `/docs/jo.job_order/${jo.id}`, undefined, balance);
     }
+  }
+  // A job order stays Out for delivery until who received it is typed from the signed slip (the owner's rule, Nov 2026).
+  if (can('jo.release')) for (const r of deliveriesAwaitingReceiver(db)) {
+    push('delivery-receiver', r.id, `${r.number} was sent for delivery: type who received it`, `/docs/jo.release/${r.id}`, `${r.jobOrderNumber} · ${r.customerName} · sent ${r.date}`);
   }
   const olderThan = manilaTimestamp(new Date(clock.now().getTime() - 3 * 86_400_000));
   const drafts = db.prepare("SELECT id, doc_type AS docType FROM drafts WHERE status = 'open' AND created_by = ? AND created_at < ?")

@@ -14,7 +14,7 @@ import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, rosterOf, stagesAll } from './public.ts';
 import { finishedWearers, lineProduction } from '../PRD/public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
-import { recordReceived } from './received.ts';
+import { OUT_FOR_DELIVERY, isOutForDelivery, recordReceived, releasesWithReceiver } from './received.ts';
 import { joListRoutes } from './list.ts';
 import { lineState, releasableQty, releaseDoc, releasedWearers, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
@@ -111,14 +111,15 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     // An abandoned job order is closed; its label says why (D5 DEP-FORFEIT).
     const stockPlace = stockPlaceOf(db, req.params.id);
     const stageLabel = stage === 'closed' && isAbandoned(db, req.params.id) ? 'Abandoned (deposit forfeited)'
-      : stockPlace && stage === 'ready' ? 'Ready to put into stock' : stockPlace && stage === 'released' ? 'All in stock' : STAGE_LABELS[stage];
+      : stockPlace && stage === 'ready' ? 'Ready to put into stock' : stockPlace && stage === 'released' ? 'All in stock'
+      : isOutForDelivery(db, req.params.id, stage) ? OUT_FOR_DELIVERY : STAGE_LABELS[stage];
     const jo = jobOrderRef(db, req.params.id)!;
     const docType = db.prepare('SELECT doc_type FROM documents WHERE id = ?').pluck().get(jo.id) as string;
     const jobOrder = { id: jo.id, number: jo.number, docType, status: jo.status, customerId: jo.customerId, customerName: jo.customerName, dueDate: jo.dueDate };
     return {
       jobOrder, stage, stageLabel, moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id),
       depositVat: depositVatOf(db, jo, today(clock)), dpInvoices: dpInvoicesOf(db, req.params.id),
-      stockPlace,
+      stockPlace, releases: releasesWithReceiver(db, req.params.id),
     };
   });
 

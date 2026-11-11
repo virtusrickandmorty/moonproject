@@ -3,7 +3,7 @@
  * release and invoice record forms already filled for this job order; and deposits left on a cancelled or edited JO,
  * with the way to move them to the replacement (DEP-XFER) or pay them back.
  */
-import { ReleaseReceived } from './ReleaseReceived.tsx';
+import { JoReleases, ReleaseReceived } from './ReleaseReceived.tsx';
 import { sizeLabel } from '@moonproject/shared';
 import { useLiveChange } from '../../live.ts';
 import { useEffect, useState } from 'react';
@@ -191,6 +191,7 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
         <Stages stage={s.stage} label={`${s.stageLabel}${s.jobOrder.dueDate ? ` · due ${showDate(s.jobOrder.dueDate)}` : ''}`} />
         <Paid m={m} />
       </div>}
+      {status === 'posted' && s.releases && <JoReleases releases={s.releases} may={can.release} onSaved={() => void api.joStatus(id).then(setS, () => undefined)} />}
       {s.awaitingInvoice.length > 0 && <p className="text-sm text-slate-600">Invoice to follow for {s.awaitingInvoice.map((r) => r.number).join(', ')}.</p>}
       {status === 'posted' && <DepositVatLines s={s} />}
       {status !== 'posted' && <Figures items={[['Deposits held', held]]} />}

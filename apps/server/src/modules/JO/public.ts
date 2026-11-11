@@ -8,6 +8,8 @@ import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { dpAppliedByInvoice, dpHeld, invoiceCreditsAt } from '../COL/public.ts';
 import { JO_DOC_TYPES_SQL, STAGE_LABELS, currentStage, type Stage } from './stages.ts';
+import { OUT_FOR_DELIVERY, isOutForDelivery } from './received.ts';
+export { deliveriesAwaitingReceiver, isOutForDelivery } from './received.ts';
 
 export { abandon, currentStage, isAbandoned, moveTo, onForStockCheck, onJobOrderEdited, onStockPlace, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage, type StockPlace } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
@@ -395,7 +397,7 @@ export function trackedJobOrder(db: Db, number: string): {
   const stage = currentStage(db, jo.id);
   if (stage === 'cancelled') return null;
   return {
-    id: jo.id, number: jo.number, customerId: jo.customerId, stage, stageLabel: STAGE_LABELS[stage], dueDate: jo.dueDate,
+    id: jo.id, number: jo.number, customerId: jo.customerId, stage, stageLabel: isOutForDelivery(db, jo.id, stage) ? OUT_FOR_DELIVERY : STAGE_LABELS[stage], dueDate: jo.dueDate,
     businessDate: db.prepare('SELECT business_date FROM documents WHERE id = ?').pluck().get(jo.id) as string,
     lines: db.prepare('SELECT description, qty FROM jo_lines WHERE document_id = ? ORDER BY line_no').all(jo.id) as { description: string; qty: number }[],
     balanceDueCents: joMoney(db, jo.id).balanceDueCents,

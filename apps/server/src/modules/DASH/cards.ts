@@ -6,7 +6,7 @@
  */
 import type { Db } from '../../platform/db/driver.ts';
 import type { SessionUser } from '../../engine/security/sessions.ts';
-import { activeJobOrders, releasesBetween } from '../JO/public.ts';
+import { activeJobOrders, isOutForDelivery, releasesBetween } from '../JO/public.ts';
 import { board, listSteps, piecesByDay } from '../PRD/public.ts';
 import { cashPosition, collectionsRegister } from '../RPT/public.ts';
 import { salesRegister } from '../TAX/public.ts';
@@ -33,7 +33,8 @@ export function homeCards(db: Db, date: string, user: SessionUser) {
   const money = can('dash.home.owner') || can('dash.home.accountant');
   const seeJobs = can('jo.view');
   const seeFloor = can('prd.view');
-  const active = seeJobs || seeFloor ? activeJobOrders(db).filter((j) => j.stage !== 'released') : [];
+  // Out for delivery (all out, the receiver not typed yet) has left the floor too.
+  const active = seeJobs || seeFloor ? activeJobOrders(db).filter((j) => j.stage !== 'released' && !isOutForDelivery(db, j.id, j.stage)) : [];
   const lines = seeJobs || seeFloor ? board(db) : [];
   const stepName = new Map(listSteps(db).map((s) => [s.id, s.name]));
   const week = seeFloor ? piecesByDay(db, addDays(date, -6), date) : [];

@@ -170,6 +170,8 @@ export interface DocCounts { all: number; posted: number; cancelled: number }
 export interface JoListRow extends DocHeader {
   /** Who, how many pieces, when it is due, rush or not, and how far it is (the list's own row words). */
   customerName?: string; dueDate?: string; priority?: 'normal' | 'rush'; pieces?: number; stage?: string;
+  /** Everything is out, but a delivery's receiver is not typed yet: not Released until it is. */
+  outForDelivery?: boolean;
   balanceDueCents: number; matchedItem: string | null; awaitingInvoice: { id: string; number: string }[]; readyToRelease: boolean;
   /** Made for stock (TPL, the website shop) with finished pieces: where they go instead of a release slip. */
   stockPlace?: { label: string; href: string } | null;
@@ -313,6 +315,9 @@ export interface JoStatus {
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean; readyQty?: number; awaitingSteps?: boolean;
     wearers?: { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedOn: string | null; ready: boolean | null }[] }[];
   awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
+  /** Its recorded releases and who got them: claimed in person (the ID seen), or sent for delivery (who received it, once typed). */
+  releases?: ({ id: string; number: string; date: string; pieces: number } & (
+    { forDelivery: false; claimedBy: string; idSeen: string } | { forDelivery: true; receivedBy?: string; receivedOn?: string }))[];
   depositVat: JoDepositVat;
   dpInvoices: DpInvoiceRow[];
 }
