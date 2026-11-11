@@ -281,6 +281,11 @@ export function publicLink(db: Db, token: string, today: string) {
 }
 
 const inches = z.number().positive().max(300).refine((n) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6, 'Use at most two decimals.');
+/** A key made on the customer's phone for what it sends (random, as long as ours). */
+export const CLIENT_KEY = z.string().regex(/^[A-Za-z0-9_-]{24,64}$/);
+/** The key a phone sent with an answer or a player's row, if it is one. */
+export const clientKeyOf = (raw: unknown) => { const k = (raw as { clientKey?: unknown } | null)?.clientKey; return CLIENT_KEY.safeParse(k).success ? k as string : null; };
+
 export const personInput = z.object({
   row: z.number().int().min(0).max(500),
   name: text(1, 120).optional(),
@@ -301,6 +306,9 @@ export const answerInput = z.object({
   email: text(5, 200),
   address: text(5, 300),
   people: z.array(personInput).min(1).max(500),
+  // The answer's own key made on the phone (Nov 2026): a send repeated by the phone or its network (an answer sent without
+  // internet goes again once online) gives back the same answer instead of a second one.
+  clientKey: CLIENT_KEY.optional(),
   // A coach sending a list the players filled in: the coach's key and the players' rows on it (team.ts stamps them).
   team: z.object({ key: z.string().min(10).max(100), entries: z.array(z.uuid()).max(500) }).strict().optional(),
 }).strict();
@@ -378,12 +386,16 @@ export function submitAnswer(db: Db, token: string, raw: unknown, ctx: { at: str
   const l = linkByToken(db, token);
   if (!l) throw notFound('That order link');
   if (!isOpen(l, ctx.today)) throw conflict('LINK_CLOSED', 'This link is closed. Please message the shop.');
+  // Sent again with the same key (the phone retried): the answer already here, not a second one.
+  const again = clientKeyOf(raw);
+  const before = again ? responseByKey(db, l, again) : undefined;
+  if (again && before) return { key: again, ...answerOf(db, before) };
   const recent = db.prepare('SELECT COUNT(*) FROM olk_responses WHERE ip = ? AND created_at >= ?').pluck().get(ctx.ip, ctx.hourAgo) as number;
   const all = db.prepare('SELECT COUNT(*) FROM olk_responses WHERE link_id = ?').pluck().get(l.id) as number;
   if (recent >= ANSWERS_PER_SENDER_PER_HOUR || all >= ANSWERS_PER_LINK) throw new AppError('TOO_MANY', 'Too many answers from here just now. Please wait a while, or message the shop.', 429);
   const v = checked(db, l, raw);
   const id = newId();
-  const key = randomBytes(18).toString('base64url');
+  const key = v.clientKey ?? randomBytes(18).toString('base64url');
   db.prepare('INSERT INTO olk_responses (id, link_id, edit_hash, name, gender, mobile, email, address, ip, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, l.id, hash(key), v.name, v.gender, v.mobile, v.email.toLowerCase(), v.address, ctx.ip, ctx.at, ctx.at);
   saveVersion(db, id, 1, v);

@@ -13,7 +13,8 @@
  * still to pick, and a member's own share. A team's coach may list the players in Excel instead (TeamSheet.tsx).
  * A set (top and lower) may be one size on top and another below; the shop's note and pictures of the design show at the
  * top (the owner's request, Nov 2026). On a team list the players may fill in their own rows for the coach, who alone sends
- * the list (TeamPlayers.tsx; a player's page is /l/<link>?p=<players' link>).
+ * the list (TeamPlayers.tsx; a player's page is /l/<link>?p=<players' link>). Without internet the page keeps what is typed
+ * on the phone and an answer sent waits there until the phone is online (offline.ts; the owner's request, Nov 2026).
  */
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
@@ -23,6 +24,7 @@ import { base64, prepare } from '../../shop/Support.tsx';
 import { OrderStatus, pcs, sizeWords } from '../../shop/OrderStatus.tsx';
 import { TeamSheet } from './TeamSheet.tsx';
 import { PlayerPage, PlayersLinkCard, coachKeyOf, mergeEntries, useTeamList, type TeamList } from './TeamPlayers.tsx';
+import { clearDraft, clearPending, isOffline, keepPending, newClientKey, pendingOf, readDraft, useDraft, useOnline, useOutbox, type Pending } from './offline.ts';
 
 export interface LinkPage {
   kind: OlkKind; title: string; closesOn: string; closedOn?: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
@@ -30,6 +32,8 @@ export interface LinkPage {
   note?: string; pictures?: string[]; // the shop's note and the design pictures' ids
 }
 type Mine = OlkAnswer & { share?: OlkShare; payments?: OlkPayment[]; orders?: CustomerOrder[] };
+/** What is typed, kept on the phone; `base`: the sent answer being changed (its last change), null for a new answer. */
+interface Draft { details: Details; people: PersonForm[]; base: string | null }
 /** The price each for this many: the largest tier reached; null when the item has no price on the list. */
 export function priceFor(tiers: { fromQty: number; unitPriceCents: number }[] | undefined, qty: number): number | null {
   const t = (tiers ?? []).filter((x) => x.fromQty <= Math.max(1, qty)).at(-1);
@@ -146,7 +150,7 @@ export async function send<T>(method: 'GET' | 'POST' | 'PUT', url: string, body?
   let res: Response;
   try {
     res = await fetch(url, { method, credentials: 'same-origin', ...(body ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
-  } catch { throw new Error('Cannot reach us right now. Check your connection and try again.'); }
+  } catch { throw Object.assign(new Error('Cannot reach us right now. Check your connection and try again.'), { offline: true }); }
   const data = await res.json().catch(() => null) as (T & { message?: string; code?: string }) | null;
   if (!res.ok) throw Object.assign(new Error(data?.message ?? 'That did not go through. Please try again.'), { status: res.status });
   return data as T;
@@ -170,6 +174,12 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   const [loaded, setLoaded] = useState(false); // the cards are filled (from the answer, or blank)
   const [coachKey, setCoachKey] = useState(() => coachKeyOf(token, query));
   const [teamList, setTeamList] = useTeamList(base, token, coachKey, loaded && link?.kind === 'team' && !playerToken);
+  // Without internet (Nov 2026): the draft kept as they type, and an answer waiting on the phone to be sent.
+  const draftKey = `olk-draft:${token}`, outKey = `olk-outbox:${token}`;
+  const online = useOnline();
+  const [queued, setQueued] = useState(false);
+  const [restored, setRestored] = useState(false);
+  const [baseVersion, setBaseVersion] = useState<string | null>(null);
   useEffect(() => {
     if (link && teamList && !sent) setPeople((ps) => mergeEntries(link, ps, teamList.entries));
   }, [teamList, sent === null, link]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -180,22 +190,50 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
       const l = await send<LinkPage>('GET', base);
       setLink(l);
       if (playerToken) return; // a player's page loads its own row
-      const own = key ? await send<Mine>('GET', `${base}/answers/${encodeURIComponent(key)}`).catch((e: Error & { status?: number }) => { if (e.status === 404) return null; throw e; }) : null;
+      const draft = readDraft<Draft>(draftKey);
+      if (pendingOf(outKey)) setQueued(true); // sent without internet: it waits on this phone
+      let offline = false;
+      const own = key ? await send<Mine>('GET', `${base}/answers/${encodeURIComponent(key)}`).catch((e: Error & { status?: number }) => {
+        if (e.status === 404) return null;
+        if (isOffline(e)) { offline = true; return null; }
+        throw e;
+      }) : null;
       if (own) {
-        setDetails({ name: own.name, gender: own.gender, mobile: own.mobile, email: own.email, address: own.address });
-        setPeople(own.people.map((p) => personFrom(p, l.items)));
-        setEditing(true);
-        setSent(own);
-        keepKey(token, key);
+        const mine = { name: own.name, gender: own.gender, mobile: own.mobile, email: own.email, address: own.address };
+        const cards = own.people.map((p) => personFrom(p, l.items));
+        setEditing(true); keepKey(token, key); setBaseVersion(own.updatedAt);
+        // Changes typed on this phone and not saved yet (to this same answer) come back; else what was sent.
+        if (draft && draft.base === own.updatedAt && JSON.stringify([draft.details, draft.people]) !== JSON.stringify([mine, cards])) {
+          setDetails(draft.details); setPeople(draft.people); setRestored(true);
+        } else { setDetails(mine); setPeople(cards); setSent(own); }
+      } else if (offline) {
+        // No internet: what was being changed on this phone, if anything; what was sent needs the internet to see.
+        if (!draft) throw new Error('No internet right now. Open this link again once you are online to see what you sent.');
+        setDetails(draft.details); setPeople(draft.people); setEditing(true); setBaseVersion(draft.base); setRestored(true);
       } else {
         if (key) setKey('');
-        setPeople(l.kind === 'group' ? [blankPerson(0, l.items)] : [1, 2, 3].map((r) => blankPerson(r, l.items)));
+        if (draft && draft.base === null) { setDetails(draft.details); setPeople(draft.people); setRestored(true); }
+        else setPeople(l.kind === 'group' ? [blankPerson(0, l.items)] : [1, 2, 3].map((r) => blankPerson(r, l.items)));
       }
       setLoaded(true);
-    })().catch((e: Error & { status?: number }) => setMissing(e.status === 404 ? 'This order link does not exist. Check that the whole link was copied, or ask the shop for it again.' : e.message));
+    })().catch((e: Error & { status?: number }) => setMissing(e.status === 404 ? 'This order link does not exist. Check that the whole link was copied, or ask the shop for it again.'
+      : isOffline(e) ? 'No internet right now, and this link has not been opened on this phone before. Open it again once you are online.' : e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useDraft(draftKey, { details, people, base: baseVersion } satisfies Draft, loaded && !sent && !queued && !playerToken && !!link?.open);
+  /** The answer went through: the players' rows on it marked sent, the key kept, the draft and the waiting answer cleared. */
+  const done = (saved: Mine & { key?: string }, p: Pending) => {
+    const fromPlayers = (p.body as { team?: { entries?: string[] } }).team?.entries ?? [];
+    if (teamList) setTeamList({ ...teamList, entries: teamList.entries.map((e) => (fromPlayers.includes(e.id) ? { ...e, onList: true } : e)) });
+    if (typeof saved.key === 'string') { setKey(saved.key); keepKey(token, saved.key); }
+    clearDraft(draftKey); setRestored(false); setBaseVersion(saved.updatedAt);
+    setSent(saved); setFresh(true); setEditing(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const outbox = useOutbox(outKey, queued, (p) => send<Mine & { key?: string }>(p.method, p.url, p.body).then((r) => ({ r, p })),
+    ({ r, p }) => { setQueued(false); done(r, p); },
+    (e) => { setQueued(false); setProblem(e.message); });
   const personal = key ? `${location.origin}/l/${token}?k=${key}` : '';
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -207,21 +245,23 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     // The players' rows on the list the coach sends are marked as sent (Nov 2026).
     const fromPlayers = people.flatMap((p) => (p.entry ? [p.entry.id] : []));
     const body = { ...(a.body as object), ...(coachKey && teamList ? { team: { key: coachKey, entries: fromPlayers } } : {}) };
+    const req: Pending = editing && key
+      ? { method: 'PUT', url: `${base}/answers/${encodeURIComponent(key)}`, body, at: new Date().toISOString() }
+      : { method: 'POST', url: `${base}/answers`, body: { ...body, clientKey: newClientKey() }, at: new Date().toISOString() };
     try {
-      const saved = editing && key
-        ? await send<Mine>('PUT', `${base}/answers/${encodeURIComponent(key)}`, body)
-        : await send<Mine & { key: string }>('POST', `${base}/answers`, body);
-      if (teamList) setTeamList({ ...teamList, entries: teamList.entries.map((e) => (fromPlayers.includes(e.id) ? { ...e, onList: true } : e)) });
-      if ('key' in saved && typeof saved.key === 'string') { setKey(saved.key); keepKey(token, saved.key); }
-      setSent(saved); setFresh(true); setEditing(true);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) { setProblem((err as Error).message); }
+      done(await send<Mine & { key?: string }>(req.method, req.url, req.body), req);
+    } catch (err) {
+      // No internet: the answer waits on this phone and goes by itself once the phone is online.
+      if (isOffline(err)) { keepPending(outKey, req); setQueued(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else setProblem((err as Error).message);
+    }
     finally { setBusy(false); }
   };
 
   if (missing) return <Frame><p role="alert" className="rounded-2xl bg-rose-50 p-5 text-rose-800">{missing}</p></Frame>;
   if (!link) return <Frame><p className="p-6 text-center text-slate-500">Loading…</p></Frame>;
   if (playerToken) return <PlayerPage link={link} token={token} playerToken={playerToken} query={query} />;
+  if (queued) return <Waiting title={link.title} online={online} trying={outbox.trying} onRetry={outbox.retry} onChange={() => { clearPending(outKey); setQueued(false); }} />;
   const team = link.kind === 'team';
   const newFromPlayers = teamList?.entries.filter((e) => !e.onList).length ?? 0;
   const removeCard = (p: PersonForm) => {
@@ -268,6 +308,8 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     <Frame title={link.title} intro={`${team ? 'Give your details, then each player: the name on the back, the number and the size of each piece.' : 'Give your details and the pieces you want, with your size or measurements.'} Open until ${day(link.closesOn)}.`}
       aside={<div className="sticky top-4 rounded-3xl bg-white p-5 ring-1 ring-slate-900/5"><SoFar link={link} tally={tally} /></div>}>
       <LinkIntro link={link} token={token} />
+      {!online && <OfflineNote />}
+      {restored && <p className="rounded-2xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">What you typed before on this phone is back. Check it, then send.</p>}
       {editing && personal && <p className="rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900">You are changing the answer you sent. Save to keep the changes.</p>}
       <form id="olk-form" onSubmit={(e) => void submit(e)} className="space-y-5" noValidate>
         <Card title={team ? 'Your details (the coach or the one in charge)' : 'Your details'}>
@@ -327,6 +369,26 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
           </div>
         </div>
       </div>
+    </Frame>
+  );
+}
+
+/** Without internet, on the form (Nov 2026). */
+export const OfflineNote = () => (
+  <p role="status" className="rounded-2xl bg-slate-800 p-4 text-sm text-white"><b>No internet right now.</b> Keep going: what you type is kept on this phone, and your answer sends once you are back online.</p>
+);
+
+/** An answer sent without internet, waiting on the phone (Nov 2026). */
+export function Waiting({ title, online, trying, onRetry, onChange }: { title: string; online: boolean; trying: boolean; onRetry: () => void; onChange: () => void }) {
+  return (
+    <Frame title={title}>
+      <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5" aria-live="polite">
+        <p className="text-2xl font-extrabold text-indigo-700">Saved on this phone</p>
+        <p className="text-slate-700">{online || trying ? 'Sending it now…' : 'There is no internet right now. Your answer is kept on this phone and sends by itself once you are back online.'}</p>
+        <p className="text-sm text-slate-600">Keep this page open, or open this link again later on this phone: it sends then. Until it is sent, the shop does not have it yet.</p>
+        <button type="button" disabled={trying} onClick={onRetry} className="w-full rounded-full bg-slate-900 py-3 font-semibold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400">{trying ? 'Sending…' : 'Try sending now'}</button>
+        <button type="button" disabled={trying} onClick={onChange} className="w-full rounded-full bg-slate-100 py-3 font-semibold text-slate-800 hover:bg-slate-200">Change something first</button>
+      </section>
     </Frame>
   );
 }

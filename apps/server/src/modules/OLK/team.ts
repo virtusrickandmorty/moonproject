@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { AppError, badRequest, conflict, newId, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { checkPerson, checkingOf, linkRow, personInput, type LinkRow, type PersonInput } from './links.ts';
+import { CLIENT_KEY, checkPerson, checkingOf, clientKeyOf, linkRow, personInput, type LinkRow, type PersonInput } from './links.ts';
 
 const hash = (key: string) => createHash('sha256').update(key).digest('hex');
 const LISTS_PER_SENDER_PER_HOUR = 10;
@@ -95,14 +95,15 @@ export function playerInvite(db: Db, token: string, playerToken: string) {
   return { coachName: list.coach_name };
 }
 
-const entryInput = personInput.omit({ row: true });
+const entryInput = personInput.omit({ row: true }).extend({ clientKey: CLIENT_KEY.optional() });
 function checkedEntry(db: Db, l: LinkRow, raw: unknown): PersonInput {
   const parsed = entryInput.safeParse(raw);
   if (!parsed.success) {
     const first = parsed.error.issues[0]!;
     throw badRequest('INVALID_INPUT', `Please check ${first.path.join(' ') || 'the form'}: ${first.message}`);
   }
-  const p = { ...parsed.data, row: 1 };
+  const { clientKey: _key, ...person } = parsed.data;
+  const p = { ...person, row: 1 };
   const { items, sizes } = checkingOf(db, l.id);
   checkPerson('team', items, sizes, p);
   return p;
@@ -113,11 +114,14 @@ export function sendEntry(db: Db, token: string, playerToken: string, raw: unkno
   const l = teamLink(db, token, ctx.today);
   const list = listByPlayers(db, l, playerToken);
   if (!list) throw notFound('That link for the players');
+  // Sent again with the same key (the phone retried): the row already here, not a second one.
+  const again = clientKeyOf(raw);
+  if (again && entryByKey(db, l, playerToken, again)) return { key: again, ...myEntry(db, token, playerToken, again) };
   const recent = db.prepare('SELECT COUNT(*) FROM olk_team_entries WHERE ip = ? AND created_at >= ?').pluck().get(ctx.ip, ctx.hourAgo) as number;
   const all = db.prepare('SELECT COUNT(*) FROM olk_team_entries WHERE list_id = ?').pluck().get(list.id) as number;
   if (recent >= ENTRIES_PER_SENDER_PER_HOUR || all >= ENTRIES_PER_LIST) throw new AppError('TOO_MANY', 'Too many from here just now. Please wait a while, or tell your coach.', 429);
   const p = checkedEntry(db, l, raw);
-  const key = randomBytes(18).toString('base64url');
+  const key = again ?? randomBytes(18).toString('base64url');
   const id = newId();
   db.prepare('INSERT INTO olk_team_entries (id, list_id, edit_hash, person, ip, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(id, list.id, hash(key), JSON.stringify(p), ctx.ip, ctx.at, ctx.at);
