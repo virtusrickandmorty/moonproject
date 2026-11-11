@@ -18,6 +18,24 @@ function stepWords(order: CustomerOrder, steps: string[], at: number): string {
   return order.stageLabel;
 }
 
+/**
+ * An item's production steps (the owner's request, Nov 2026): done with a tick, the one being worked on now, the rest after.
+ * When nothing is being worked on, the first step not done yet is "next".
+ */
+function ItemSteps({ steps }: { steps: NonNullable<CustomerOrder['lines'][number]['steps']> }) {
+  const next = steps.some((s) => s.state === 'now') ? -1 : steps.findIndex((s) => s.state === 'later');
+  return (
+    <ol className="mt-2 flex flex-wrap gap-1.5 text-sm" aria-label="Steps">
+      {steps.map((s, i) => (
+        <li key={`${s.name}-${i}`} className={`rounded-full px-2.5 py-0.5 font-semibold ${
+          s.state === 'done' ? 'bg-emerald-100 text-emerald-800' : s.state === 'now' ? 'bg-indigo-600 text-white' : i === next ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : 'bg-white text-slate-500 ring-1 ring-slate-200'}`}>
+          {s.state === 'done' ? `✓ ${s.name}` : s.state === 'now' ? `${s.name} · now` : i === next ? `${s.name} · next` : s.name}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** The size column: the size, or Custom fit, with the pieces when more than one. */
 export const sizeWords = (size: string | undefined, custom: boolean, qty: number) =>
   [custom ? 'Custom fit' : size ? `Size ${size}` : '', qty > 1 ? pcs(qty) : ''].filter(Boolean).join(' · ');
@@ -39,6 +57,7 @@ export function OrderStatus({ order, title = 'Your order' }: { order: CustomerOr
         {order.lines.map((l, i) => (
           <li key={i} className="rounded-2xl bg-slate-50 p-4">
             <p className="flex items-baseline justify-between gap-3"><span className="font-bold">{l.description}</span><span className="shrink-0 text-sm text-slate-500">{pcs(l.qty)}</span></p>
+            {l.steps && l.steps.length > 0 && <ItemSteps steps={l.steps} />}
             {l.wearers.length > 0 && <ul className="mt-2 divide-y divide-slate-200/70">
               {l.wearers.map((w, j) => {
                 const back = [w.jerseyNumber && `#${w.jerseyNumber}`, w.jerseyName].filter(Boolean).join(' ');

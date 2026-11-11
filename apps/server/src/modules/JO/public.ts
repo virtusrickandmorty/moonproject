@@ -425,7 +425,7 @@ export function customerOrderView(db: Db, jobOrderId: string, people?: ReadonlyS
         ...(r.size ? { size: r.lowerSize && r.lowerSize !== r.size ? `${r.size} / ${r.lowerSize}` : r.size } : {}),
         ...(r.jerseyName ? { jerseyName: r.jerseyName } : {}), ...(r.jerseyNumber ? { jerseyNumber: r.jerseyNumber } : {}),
       }));
-      return { description: l.description, qty: people ? wearers.reduce((n, w) => n + w.qty, 0) : l.qty, wearers };
+      return { lineNo: l.lineNo, description: l.description, qty: people ? wearers.reduce((n, w) => n + w.qty, 0) : l.qty, wearers };
     })
     .filter((l) => !people || l.wearers.length > 0);
   if (people && !lines.length) return null;

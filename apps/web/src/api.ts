@@ -482,7 +482,11 @@ export type EstSheets = { costs: true; sheets: EstCosting[]; rules: EstRules } |
 /** A job order as its customer sees it on their private links (order link, design proof): no prices. */
 export interface CustomerOrder {
   number: string; stage: string; stageLabel: string; placedAt: string; dueDate: string;
-  lines: { description: string; qty: number; wearers: { name: string; measured: boolean; qty: number; size?: string; jerseyName?: string; jerseyNumber?: string }[] }[];
+  lines: {
+    description: string; qty: number; wearers: { name: string; measured: boolean; qty: number; size?: string; jerseyName?: string; jerseyNumber?: string }[];
+    /** On the order link, while it is being made: the item's production steps (the owner's request, Nov 2026). */
+    steps?: { name: string; state: 'done' | 'now' | 'later' }[];
+  }[];
 }
 export type OlkKind = 'team' | 'group';
 export type OlkGender = 'female' | 'male';
