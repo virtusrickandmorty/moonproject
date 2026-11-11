@@ -846,7 +846,7 @@ export interface PoLineStatus { lineNo: number; supplyId: string; supplyName: st
 export interface PoStatus {
   id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string; lines: PoLineStatus[];
   /** One order's own page only: its receiving reports, each with the bill recorded for it. */
-  deliveries?: { id: string; number: string; date: string; status: 'posted' | 'cancelled'; bill: { id: string; number: string } | null }[];
+  deliveries?: { id: string; number: string; date: string; status: 'posted' | 'cancelled'; bill: BillPaid | null }[];
   /** One order's own page only: the purchase request it was made from. */
   request?: { id: string; number: string } | null;
   /** One order's own page only: what recorded supplier advances paid on it. */
@@ -856,8 +856,12 @@ export interface RrDetail {
   id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string; supplierId: string; supplierName: string;
   lines: { lineNo: number; poLineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; qty: number }[];
   /** The recorded supplier bill for these goods, if any. */
-  bill: { id: string; number: string } | null;
+  bill: BillPaid | null;
 }
+/** A recorded supplier bill with what is still owed on it (0: paid) and its due date (the owner's request, Nov 2026). */
+export interface BillPaid { id: string; number: string; owedCents?: number; dueDate?: string }
+/** Whether a purchase order's bills are paid: how many bills, what is still owed on them, and whether any is overdue. */
+export interface PoPayment { bills: number; owedCents: number; overdue: boolean; nextDue: string | null }
 export interface SupplierPo { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; fullyReceived: boolean; advancedCents: number }
 export interface SupplierRr { id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string }
 /** GET /api/inv/count-sheet?format=json: the active supplies of a category and the cost each is valued at on the count date. */
@@ -893,8 +897,9 @@ export interface PurRequestListRow extends DocHeader {
 export interface PoListRow extends DocHeader {
   supplierName: string; expectedDate: string | null; requestId: string | null; requestNumber: string | null;
   orderedQty: number; receivedQty: number; toReceiveCents: number; deliveries: number; billed: number; late: boolean;
+  payment?: PoPayment | null;
 }
-export interface RrListRow extends DocHeader { supplierName: string; poId: string; poNumber: string; lines: number; qty: number; valueCents: number; bill: { id: string; number: string } | null }
+export interface RrListRow extends DocHeader { supplierName: string; poId: string; poNumber: string; lines: number; qty: number; valueCents: number; bill: BillPaid | null }
 type CountCents = { count: number; cents: number };
 export interface PurListSummary {
   request: { waiting: CountCents; approved: CountCents; rejected: CountCents; used: CountCents };
@@ -1320,6 +1325,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     auditIntegrity: () => call<IntegrityReport>('GET', '/api/aud/integrity'),
     list: (type: string, q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
+    /** What is still owed on each listed bill (0: paid) and its due date. */
+    apBillsOwed: (ids: string[]) => call<{ id: string; owedCents: number; payableCents: number; dueDate: string }[]>('GET', `/api/ap/bills/owed?${new URLSearchParams({ ids: ids.join(',') })}`),
     docCounts: (type: string, q: DocListFilters = {}) =>
       call<DocCounts>('GET', doc(type, `/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),

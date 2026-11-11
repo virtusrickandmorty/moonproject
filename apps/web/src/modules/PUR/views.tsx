@@ -13,7 +13,7 @@ import { Loading, Notice, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { qtyCents, qtyWords } from './purchasing.ts';
-import { Badge, Facts, Journey, Progress, type Step } from './parts.tsx';
+import { Badge, Facts, Journey, PayBadge, Progress, type Step } from './parts.tsx';
 
 const num = 'py-2 text-right tabular-nums';
 const head = 'border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500';
@@ -22,7 +22,7 @@ const action = 'inline-block rounded-md bg-indigo-600 px-3 py-2 text-sm font-med
 const secondary = 'inline-block rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 
-/** The order's journey: asked for (when made from a request), ordered, received (how much), billed (how many deliveries). */
+/** The order's journey: asked for (when made from a request), ordered, received (how much), billed (how many deliveries), paid (what is still owed on its bills). */
 function orderSteps(po: PoStatus): Step[] {
   const deliveries = (po.deliveries ?? []).filter((r) => r.status === 'posted');
   const ordered = po.lines.reduce((n, l) => n + l.orderedQty, 0), received = po.lines.reduce((n, l) => n + Math.min(l.receivedQty, l.orderedQty), 0);
@@ -34,7 +34,21 @@ function orderSteps(po: PoStatus): Step[] {
     { label: allIn ? 'All received' : 'Receive the goods', state: allIn ? 'done' : 'now', note: received === 0 ? 'Nothing received yet' : `${received} of ${ordered} pieces` },
     { label: allIn && allBilled ? 'Billed' : 'Record the bill', state: allIn && allBilled ? 'done' : deliveries.length > billed ? 'now' : 'later',
       note: deliveries.length === 0 ? 'After the goods come' : `${billed} of ${deliveries.length} ${deliveries.length === 1 ? 'delivery' : 'deliveries'} billed` },
+    paidStep(po, deliveries),
   ];
+}
+
+/** Paid, or what is still to pay on its bills and by when (the owner's request, Nov 2026). */
+function paidStep(po: PoStatus, deliveries: NonNullable<PoStatus['deliveries']>): Step {
+  const bills = deliveries.flatMap((r) => (r.bill ? [r.bill] : []));
+  const open = bills.filter((b) => (b.owedCents ?? 0) > 0);
+  const owed = open.reduce((n, b) => n + (b.owedCents ?? 0), 0);
+  const due = open.map((b) => b.dueDate ?? '').filter(Boolean).sort()[0];
+  const ahead = po.advancedCents ?? 0;
+  if (bills.length === 0) return { label: 'Pay the bill', state: 'later', note: ahead > 0 ? `₱${formatPesos(ahead)} paid in advance` : 'After the bill' };
+  if (owed > 0) return { label: 'Pay the bill', state: 'now', note: `₱${formatPesos(owed)} still to pay${due ? `${due < today() ? ', overdue since' : ', due'} ${showDate(due)}` : ''}` };
+  const all = deliveries.length > 0 && bills.length === deliveries.length && po.lines.every((l) => l.receivedQty >= l.orderedQty);
+  return { label: all ? 'Paid' : 'Paid so far', state: all ? 'done' : 'later', note: all ? 'Every bill is paid' : 'The bills so far are paid' };
 }
 
 function PurchaseOrderDetail({ id }: { id: string }) {
@@ -90,7 +104,9 @@ function PurchaseOrderDetail({ id }: { id: string }) {
                 <tr key={r.id} className="border-b border-slate-100">
                   <td className="py-2"><Link to={docPath('pur.rr', `/${r.id}`)} className={link}>{r.number}</Link></td>
                   <td>{showDate(r.date)}</td>
-                  <td>{r.bill ? <Link to={docPath('ap.bill', `/${r.bill.id}`)} className={link}>{r.bill.number}</Link>
+                  <td>{r.bill ? <span className="flex flex-wrap items-center gap-2"><Link to={docPath('ap.bill', `/${r.bill.id}`)} className={link}>{r.bill.number}</Link>
+                      <PayBadge owedCents={r.bill.owedCents} dueDate={r.bill.dueDate} today={today()} />
+                      {(r.bill.owedCents ?? 0) > 0 && may['ap.payment'] && <Link to={docPath('ap.payment', `/new?supplier=${po.supplierId}&bill=${r.bill.id}`)} className="text-sm font-medium text-indigo-700 underline">Pay it</Link>}</span>
                     : may['ap.bill'] ? <Link to={docPath('ap.bill', `/new?rr=${r.id}`)} className="text-sm font-medium text-indigo-700 underline">Record the bill</Link> : <Badge tone="bg-amber-100 text-amber-800">No bill yet</Badge>}</td>
                 </tr>
               ))}

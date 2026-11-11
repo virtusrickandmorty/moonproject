@@ -11,7 +11,7 @@ import { peso } from '../../components/ui.tsx';
 import { FigureStrip } from '../../components/Figures.tsx';
 import type { ListColumn, ListSource } from '../../generic/DocList.tsx';
 import { useLiveReload } from '../../live.ts';
-import { Badge, Progress, RequestBadge } from './parts.tsx';
+import { Badge, PayBadge, Progress, RequestBadge, manilaToday } from './parts.tsx';
 
 const shortDay = (date: string) => { const [y, m, d] = date.split('-').map(Number) as [number, number, number]; return new Date(y, m - 1, d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }); };
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-PH')} ${n === 1 ? one : many}`;
@@ -105,7 +105,11 @@ export const purchaseOrderList = {
       return (
         <div className="space-y-1">
           <Progress done={x.receivedQty} of={x.orderedQty} words={all ? 'All received' : x.receivedQty ? `${x.receivedQty} of ${x.orderedQty}` : 'Nothing yet'} />
-          {x.deliveries > 0 && (x.billed < x.deliveries ? <Badge tone="bg-amber-100 text-amber-800">{x.deliveries - x.billed} to bill</Badge> : <Badge tone="bg-emerald-100 text-emerald-800">Billed</Badge>)}
+          <div className="flex flex-wrap gap-1">
+            {x.deliveries > 0 && (x.billed < x.deliveries ? <Badge tone="bg-amber-100 text-amber-800">{x.deliveries - x.billed} to bill</Badge> : <Badge tone="bg-emerald-100 text-emerald-800">Billed</Badge>)}
+            {/* Paid or still to pay on its bills (the owner's request, Nov 2026). */}
+            {x.payment && x.payment.bills > 0 && <PayBadge owedCents={x.payment.owedCents} dueDate={x.payment.nextDue} overdue={x.payment.overdue} />}
+          </div>
         </div>
       );
     },
@@ -147,7 +151,8 @@ export const receivingReportList = {
     cell: (r) => {
       const x = rr(r);
       if (r.status !== 'posted') return '';
-      return x.bill ? <Badge tone="bg-emerald-100 text-emerald-800">{x.bill.number}</Badge> : <Badge tone="bg-amber-100 text-amber-800">No bill yet</Badge>;
+      return x.bill ? <div className="flex flex-wrap gap-1"><Badge tone="bg-slate-100 text-slate-700">{x.bill.number}</Badge><PayBadge owedCents={x.bill.owedCents} dueDate={x.bill.dueDate} today={manilaToday()} /></div>
+        : <Badge tone="bg-amber-100 text-amber-800">No bill yet</Badge>;
     },
   }] as ListColumn[],
 };
