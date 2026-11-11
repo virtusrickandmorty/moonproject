@@ -6,7 +6,7 @@
  * signed-in worker's own pieces, today, and they count once the production head approves them (the owner's request, Nov 2026).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { api, ApiError, type FloorJob, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
+import { api, ApiError, type FloorJob, type FloorOpen, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
 import { Earnings } from '../../PAY/entry.tsx';
 import { setUnattended, startLive, stopLive, useLiveReload } from '../../../live.ts';
@@ -30,7 +30,7 @@ export function FloorApp({ me }: { me: Me }) {
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-page text-[#0f172a]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {job ? <JobScreen jobRef={decodeURIComponent(job)} lineNo={Number(q.get('line')) || undefined} stepId={Number(q.get('step')) || undefined} />
         : <>
-          <main className="flex-1 px-5 pb-28 pt-6">{tab === 'today' ? <TodayScreen me={me} /> : tab === 'jobs' ? <OpenJobsScreen /> : <EarningsScreen me={me} />}</main>
+          <main className="flex-1 px-5 pb-28 pt-6">{tab === 'today' ? <TodayScreen me={me} /> : tab === 'jobs' ? <OpenJobsScreen stepId={Number(q.get('step')) || undefined} /> : <EarningsScreen me={me} />}</main>
           <TabBar tab={tab} />
         </>}
     </div>
@@ -218,22 +218,44 @@ function Scans({ scans }: { scans: FloorScan[] }) {
   );
 }
 
-/** The open job orders with pieces left on the steps the worker does (ticked on their employee page), rush first. */
-function OpenJobsScreen() {
+/**
+ * The open job orders with pieces left on the steps the worker does (ticked on their employee page), rush first. A worker
+ * with more than one step gets a tab for each (the owner's request, Nov 2026), with how many jobs wait on it; the tab is in
+ * the address (?step=), so coming back from a job opens the same one.
+ */
+export function stepTabs(steps: FloorOpen['steps'], jobs: FloorOpen['jobs'], asked?: number) {
+  const tabs = steps.map((s) => ({ ...s, count: jobs.filter((j) => j.stepId === s.id).length }));
+  const on = tabs.find((t) => t.id === asked) ?? tabs.find((t) => t.count > 0) ?? tabs[0];
+  return { tabs, on, jobs: on && tabs.length > 1 ? jobs.filter((j) => j.stepId === on.id) : jobs };
+}
+
+function OpenJobsScreen({ stepId }: { stepId?: number }) {
   const { data, error, reload } = useData(api.floorOpen, []);
   useLiveReload(reload);
   if (error) return <Problem text={error} />;
   if (!data) return <Waiting />;
+  const { tabs, on, jobs } = stepTabs(data.steps, data.jobs, stepId);
+  const many = tabs.length > 1;
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight">Open jobs</h1>
-        {data.steps.length > 0 && <p className="text-sm font-semibold text-slate-500">On my steps: {data.steps.map((s) => s.name).join(', ')}</p>}
+        {tabs.length === 1 && <p className="text-sm font-semibold text-slate-500">On my step: {tabs[0]!.name}</p>}
       </div>
-      {data.steps.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">Your steps are not set yet. Ask the office to tick the steps you do (Sewing, Cutting…) on your employee page.</p>
-        : data.jobs.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">No open job has pieces left on your steps right now.</p> : (
-          <ul className="space-y-2.5">
-            {data.jobs.map((j) => (
+      {many && (
+        <div role="tablist" aria-label="My steps" className="flex gap-1 overflow-x-auto rounded-2xl bg-slate-200/70 p-1">
+          {tabs.map((t) => (
+            <button key={t.id} type="button" role="tab" aria-selected={t.id === on?.id} onClick={() => navigate(`/floor/jobs?step=${t.id}`, { replace: true })}
+              className={`flex min-w-fit flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-extrabold ${t.id === on?.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600'}`}>
+              {t.name}<span className={`rounded-full px-2 py-0.5 text-xs ${t.count ? 'bg-indigo-50 text-indigo-600' : 'bg-white/60 text-slate-500'}`}>{t.count}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {tabs.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">Your steps are not set yet. Ask the office to tick the steps you do (Sewing, Cutting…) on your employee page.</p>
+        : jobs.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">{many ? `No open job has pieces left on ${on!.name} right now.` : 'No open job has pieces left on your steps right now.'}</p> : (
+          <ul className="space-y-2.5" role={many ? 'tabpanel' : undefined} aria-label={many ? on!.name : undefined}>
+            {jobs.map((j) => (
               <li key={`${j.jobOrderId}-${j.lineNo}-${j.stepId}`}>
                 <button type="button" onClick={() => navigate(`/floor/job/${encodeURIComponent(j.jobOrderNumber)}?line=${j.lineNo}&step=${j.stepId}`)} className="flex w-full flex-col gap-2.5 rounded-2xl bg-white p-4 text-left shadow-sm">
                   <span className="flex items-center justify-between gap-2"><span className="text-[13px] font-bold text-indigo-600">{j.jobOrderNumber} · {j.stepName}</span>
