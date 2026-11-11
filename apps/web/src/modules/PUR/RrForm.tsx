@@ -11,6 +11,7 @@ import { formatPesos } from '@moonproject/shared';
 import { api, type DocTypeInfo, type Me, type PoStatus } from '../../api.ts';
 import { Button, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
+import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
 import { overReceived, qtyCents, qtyOf, qtyWords, receiveAllLeft, rrRows, rrToInput, type RrRow } from './purchasing.ts';
 import { Badge, PickCard, Progress } from './parts.tsx';
@@ -53,12 +54,17 @@ export function RrForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
     return () => void (stale = true);
   }, [poId, open.length, previous]);
 
-  const { input, errors } = rrToInput(poId, rows);
+  // The day the goods came (the owner's request, Nov 2026): empty for today; an edit keeps the replaced report's day.
+  const came = usePrintedDate(form.original);
+  const checked = rrToInput(poId, rows);
+  const input = checked.input;
+  const errors = [...checked.errors, ...(came.error ? [came.error] : []), ...(came.businessDate && came.businessDate > today() ? ['The day the goods came cannot be after today.'] : [])];
   const set = (i: number, qty: string) => setRows(rows.map((r, j) => (j === i ? { ...r, qty } : r)));
   const costOf = (poLineNo: number) => po?.lines.find((l) => l.lineNo === poLineNo)?.unitCostCents ?? 0;
   const now = rows.flatMap((r) => { const qty = qtyOf(r.qty); return qty === undefined ? [] : [{ r, qty }]; });
   const worth = now.reduce((n, { r, qty }) => n + qtyCents(qty, costOf(r.poLineNo)), 0);
   const date = today();
+  const cameOn = came.businessDate ?? date;
   const words = find.trim().toLowerCase();
   const shown = open.filter((p) => !words || `${p.number} ${p.supplierName} ${p.lines.map((l) => l.supplyName).join(' ')}`.toLowerCase().includes(words));
 
@@ -81,7 +87,7 @@ export function RrForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
   );
 
   return (
-    <PurFrame type={type} form={form} title="New receiving report" input={input} errors={errors} showTotal={false} wide side={side}>
+    <PurFrame type={type} form={form} title="New receiving report" input={input} errors={errors} showTotal={false} wide side={side} businessDate={came.businessDate}>
       {error && <Notice>{error}</Notice>}
       <Panel title="Which order did the goods come for?">
         {editing ? (
@@ -112,6 +118,12 @@ export function RrForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
         )}
         {!editing && open.length === 0 && !error && <p className="text-sm text-slate-500">No purchase order is waiting for goods.</p>}
       </Panel>
+      {po && (
+        <Panel title="When did they come?">
+          <PrintedDateField label="Date the goods came" value={came.text} onChange={came.setText}
+            hint={`Leave empty for today. Items of the order that came on another day go in their own report, with that day.${cameOn < date ? ` Recorded as received on ${showDate(cameOn)}.` : ''}`} />
+        </Panel>
+      )}
       {po && (
         <Panel title="What came?">
           <div className="flex flex-wrap items-center justify-between gap-2">

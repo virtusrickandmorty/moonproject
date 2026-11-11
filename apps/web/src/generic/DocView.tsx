@@ -100,7 +100,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
       {printError && <Notice>{printError}</Notice>}
       {/* Its key facts at a glance, as the home's tiles. */}
       <dl className={`grid gap-3 ${parts.noTotal ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
-        <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{type.dating === 'printed' ? 'Date printed on it' : 'Dated'}</dt><dd className="mt-1 font-semibold text-slate-900">{longDate(h.businessDate)}</dd></div>
+        <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{type.key === 'pur.rr' ? 'Goods came' : type.dating === 'printed' ? 'Date printed on it' : 'Dated'}</dt><dd className="mt-1 font-semibold text-slate-900">{longDate(h.businessDate)}</dd></div>
         <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{type.dating === 'printed' ? 'Typed' : 'Recorded'}</dt><dd className="mt-1 font-semibold text-slate-900">{manilaTime(h.postedAt)}</dd></div>
         {!parts.noTotal && <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{parts.totalLabel ?? 'Total'}</dt><dd className={`mt-1 text-xl font-bold tabular-nums ${posted ? 'text-[#010101]' : 'text-slate-400 line-through'}`}>{peso(h.totalCents)}</dd></div>}
       </dl>

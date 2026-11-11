@@ -129,9 +129,10 @@ function ReceivingReportDetail({ id }: { id: string }) {
   const [rr, setRr] = useState<RrDetail | null>(null);
   const [po, setPo] = useState<PoStatus | null>(null);
   const [mayBill, setMayBill] = useState(false);
+  const [mayReceive, setMayReceive] = useState(false);
   const [error, setError] = useState('');
   const load = () => api.receivingReport(id).then((r) => { setRr(r); return api.purchaseOrder(r.poId).then(setPo, () => setPo(null)); }, (e: Error) => setError(e.message));
-  useEffect(() => void api.docTypes().then((t) => setMayBill(!!t.find((d) => d.key === 'ap.bill')?.canPost), () => undefined), []);
+  useEffect(() => void api.docTypes().then((t) => { setMayBill(!!t.find((d) => d.key === 'ap.bill')?.canPost); setMayReceive(!!t.find((d) => d.key === 'pur.rr')?.canPost); }, () => undefined), []);
   useEffect(() => void load(), [id]);
   useLiveReload(load);
   if (error) return <Notice>{error}</Notice>;
@@ -142,7 +143,7 @@ function ReceivingReportDetail({ id }: { id: string }) {
   const posted = rr.status === 'posted';
   const steps: Step[] = [
     { label: 'Ordered', state: 'done', note: rr.poNumber },
-    { label: 'Received', state: 'done', note: po && po.status === 'posted' ? (left === 0 ? 'The order is complete' : `${left} pieces still to come on the order`) : rr.number },
+    { label: 'Received', state: 'done', note: po && po.status === 'posted' ? (left === 0 ? 'The order is complete' : `${left} ${left === 1 ? 'piece' : 'pieces'} still to come on the order`) : rr.number },
     { label: rr.bill ? 'Billed' : 'Record the bill', state: rr.bill ? 'done' : 'now', note: rr.bill ? rr.bill.number : 'The supplier’s invoice for these goods' },
   ];
   return (
@@ -174,6 +175,13 @@ function ReceivingReportDetail({ id }: { id: string }) {
           {po && <tfoot><tr><td className="py-2 font-semibold" colSpan={3}>Worth in all</td><td className={`${num} font-semibold`}>{formatPesos(worth)}</td><td /></tr></tfoot>}
         </table>
       </div>
+      {/* The rest of the order came another day (the owner's request, Nov 2026): its own report, dated the day it came. */}
+      {posted && po?.status === 'posted' && left > 0 && mayReceive && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg bg-indigo-50 p-3">
+          <span className="text-sm text-indigo-900">{left} {left === 1 ? 'piece is' : 'pieces are'} still to come on {rr.poNumber}: {po.lines.filter((l) => l.remainingQty > 0).map((l) => l.supplyName).join(', ')}.</span>
+          <Link to={`${docPath('pur.rr', '/new')}?po=${po.id}`} className={action}>Receive the rest</Link>
+        </div>
+      )}
       {posted && !rr.bill && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg bg-amber-50 p-3">
           <span className="text-sm text-amber-800">No supplier’s bill is recorded for these goods yet.</span>

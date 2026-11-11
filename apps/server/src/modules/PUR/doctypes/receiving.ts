@@ -36,7 +36,9 @@ export const receivingReportDoc: DocTypeDef<ReceivingReportInput, ReceivingRepor
   title: 'Receiving Report',
   numbering: { series: { key: 'RR', prefix: 'RR-' } },
   permissions: { view: 'pur.rr.view', create: 'pur.rr.create', post: 'pur.rr.post', cancel: 'pur.rr.cancel', print: 'pur.rr.print' },
-  dating: 'system',
+  // The day the goods came (the owner's request, Nov 2026: items of one order that came on different days are each
+  // received on their own day): today or earlier, as the supplier's delivery receipt says. Nothing is journalled.
+  dating: 'printed',
   inputSchema: receivingReportInput,
 
   compute(input, ctx) {
