@@ -73,6 +73,44 @@ function Icon({ name, className = 'size-5' }: { name: keyof typeof ICONS; classN
  * so one person marking a notification read leaves it unread for everyone else.
  */
 const BELL_ASK = 100; // past this the badge says "99+"
+
+/**
+ * The bell, alive (the owner's request, Nov 2026: "make it fun"): with unread notifications it rings every 12 seconds (it
+ * swings, its clapper knocks, little sound waves go out). When a new one comes in it jumps and rings hard, a "+1" floats
+ * up, sparks fly and the red count pops. With none it sleeps, and only wiggles under the mouse. index.css "bell-"; a
+ * device set to reduce motion keeps it still.
+ * Each ring is played once (`ring` counts them) and nothing moves in between, so the ERP is as quick as before: an
+ * animation left running made the browser restyle the page every frame, all day.
+ */
+const BELL_EVERY = 12_000;
+function BellIcon({ ring, news, added }: { ring: number; news: number; added: number }) {
+  return (
+    <span className="relative block">
+      <span key={news} className={`block ${news > 0 ? 'bell-excited' : ''}`}>
+        {/* The clapper is its own picture over the bell, so the knock moves it without redrawing the bell. */}
+        <span key={ring} className={`bell-body relative block size-6 ${ring > 0 ? 'bell-ringing' : ''}`}>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="block size-6">
+            <path d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0" />
+          </svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="bell-clapper absolute inset-0 block size-6">
+            <path d="M14.857 17.082a3 3 0 1 1-5.714 0" />
+          </svg>
+        </span>
+      </span>
+      {ring > 0 && <span key={`w${ring}`}>
+        <svg aria-hidden="true" viewBox="0 0 6 12" className="bell-wave bell-wave-left absolute -left-2 top-1 h-3 w-1.5 text-amber-500"><path d="M5 1C2 3.5 2 8.5 5 11" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" /></svg>
+        <svg aria-hidden="true" viewBox="0 0 6 12" className="bell-wave bell-wave-right absolute -right-2 top-1 h-3 w-1.5 text-amber-500"><path d="M1 1c3 2.5 3 7.5 0 10" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" /></svg>
+      </span>}
+      {news > 0 && <span key={`n${news}`} aria-hidden="true" className="pointer-events-none absolute inset-0">
+        <span className="bell-plus absolute -left-3 -top-3 text-[11px] font-extrabold text-[#f95f53]">+{added}</span>
+        {['#f95f53', '#fbbf24', '#6366f1', '#34d399', '#f472b6', '#38bdf8'].map((c, i) => (
+          <span key={c} className="bell-spark absolute left-1/2 top-1/2 size-1.5 rounded-full" style={{ background: c, '--a': `${i * 60 + 30}deg` } as CSSProperties} />
+        ))}
+      </span>}
+    </span>
+  );
+}
+
 function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const path = useLocation();
   const [unread, setUnread] = useState<DashNotification[]>([]);
@@ -80,8 +118,21 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const button = useRef<HTMLButtonElement>(null);
   // A new job order to route pops up once (the owner's request, Oct 2026); those already there when the page opened do not.
   const seen = useRef<Set<string> | null>(null);
+  // Each time new notifications come in after the page opened: the bell jumps and rings, "+N" floats up.
+  const [news, setNews] = useState({ times: 0, added: 0 });
+  // The bell rings now and every 12 seconds while something is unread and its list is closed (not while the tab is hidden).
+  const [ring, setRing] = useState(0);
+  const waiting = unread.length > 0 && !open;
+  useEffect(() => {
+    if (!waiting) return setRing(0);
+    setRing((r) => r + 1);
+    const t = setInterval(() => { if (!document.hidden) setRing((r) => r + 1); }, BELL_EVERY);
+    return () => clearInterval(t);
+  }, [waiting]);
   const load = useCallback(() => api.dashNotifications({ limit: BELL_ASK, offset: 0, unread: true }).then((list) => {
     const fresh = list.filter((n) => n.kind === 'jo-to-route' && seen.current && !seen.current.has(n.id));
+    const added = seen.current ? list.filter((n) => !seen.current!.has(n.id)).length : 0;
+    if (added > 0) setNews((n) => ({ times: n.times + 1, added }));
     seen.current = new Set([...(seen.current ?? []), ...list.map((n) => n.id)]);
     for (const n of fresh) showToast('info', <>{n.label}. <Link to={n.href ?? '/prd/board'} className="underline">Open the production board</Link></>);
     setUnread(list);
@@ -103,9 +154,9 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const count = unread.length >= BELL_ASK ? '99+' : String(unread.length);
   return (
     <div className="relative">
-      <button ref={button} type="button" aria-label={unread.length ? `Notifications, ${count} unread` : 'Notifications'} className="relative rounded-full p-2 text-slate-700 hover:bg-white" onClick={onToggle}>
-        <Icon name="bell" className="size-6" />
-        {unread.length > 0 && <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f95f53] px-1 text-[10px] font-bold text-white ring-2 ring-page">{count}</span>}
+      <button ref={button} type="button" aria-label={unread.length ? `Notifications, ${count} unread` : 'Notifications'} className="bell relative rounded-full p-2 text-slate-700 hover:bg-white" onClick={onToggle}>
+        <BellIcon ring={ring} news={news.times} added={news.added} />
+        {unread.length > 0 && <span key={count} aria-hidden="true" className="bell-badge absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f95f53] px-1 text-[10px] font-bold text-white ring-2 ring-page">{count}</span>}
       </button>
       {open && (
         <div style={{ '--bell-top': `${(button.current?.getBoundingClientRect().bottom ?? 64) + 8}px` } as CSSProperties}
