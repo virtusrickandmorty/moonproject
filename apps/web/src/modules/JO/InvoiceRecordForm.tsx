@@ -1,7 +1,8 @@
 /**
  * Invoice record form (PLAN D3 release gate, D4.4): the booklet invoice written for a release whose invoice was to follow.
  * Pick the release by its number, see what to write on the booklet, type the invoice number. It says plainly when the
- * release already has its invoice. Also its Edit (cancel and reissue with a new booklet number, NR-4).
+ * release already has its invoice. Also its Edit (cancel and reissue with a new booklet number, NR-4). The job order's other
+ * releases with no invoice yet are ticked to go on the same invoice (the owner's request, Nov 2026).
  */
 import { useEffect, useState } from 'react';
 import { api, type BookletShown, type DocTypeInfo, type Preview, type ReleaseInvoiceInfo, type ReleasePick } from '../../api.ts';
@@ -11,10 +12,10 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
-import { Booklet, ReleasePicker } from './parts.tsx';
+import { AlsoOnInvoice, Booklet, ReleasePicker } from './parts.tsx';
 import { invoiceBooklet, invoiceInput } from './forms.ts';
 
-type Stored = { releaseId: string; invoiceNumber: string; note?: string };
+type Stored = { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; note?: string };
 
 export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [info, setInfo] = useState<ReleaseInvoiceInfo | null>(null);
@@ -22,11 +23,13 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
   const [invoiceNumber, setInvoice] = useState('');
   const [note, setNote] = useState('');
   const [was, setWas] = useState(''); // the edited record's booklet number: used once, ever, so not prefilled
-  const choose = (r: ReleasePick | null) => (r ? api.joReleaseInfo(r.id).then(setInfo, rec.fail) : (setInfo(null), undefined));
+  const [picked, setPicked] = useState<string[] | null>(null); // the other releases ticked; null: all of them
+  const choose = (r: ReleasePick | null) => { setPicked(null); return r ? api.joReleaseInfo(r.id).then(setInfo, rec.fail) : (setInfo(null), undefined); };
   const rec = useRecord(type, mode, (d) => {
     const input = d.input as unknown as Stored;
     setWas(input.invoiceNumber);
     setNote(input.note ?? '');
+    setPicked(input.alsoReleaseIds ?? []);
     api.joReleaseInfo(input.releaseId).then(setInfo, rec.fail);
   });
 
@@ -41,7 +44,12 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
 
   const printed = usePrintedDate(rec.original);
   const r = info?.release ?? null;
-  const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, note });
+  const others = info?.others ?? [];
+  const also = others.filter((o) => (picked ?? others.map((x) => x.id)).includes(o.id)).map((o) => o.id);
+  // The lines and booklet figures follow the releases ticked.
+  const alsoKey = also.join(',');
+  useEffect(() => { if (r) api.joReleaseInfo(r.id, also).then((i) => { if (JSON.stringify(i) !== JSON.stringify(info)) setInfo(i); }, rec.fail); }, [r?.id, alsoKey]);
+  const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, note, also });
   const live = useLive<Preview | null>(JSON.stringify([typed.input, printed.businessDate]), typed.errors.length === 0 && !printed.error, () => rec.preview(typed.input, printed.businessDate));
   // The preview's own figures once it answers; until then the release's. In mode C both show the sale less the downpayments invoiced.
   const doc = live?.doc as Parameters<typeof invoiceBooklet>[0] & { depositAppliedCents: number } | undefined;
@@ -64,9 +72,10 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
           {blocked && <Notice tone="warning">{blocked}</Notice>}
           {info && !blocked && (
             <ul className="text-sm text-slate-600">
-              {info.lines.map((l) => <li key={l.lineNo}>{l.qty} × {l.description}</li>)}
+              {info.lines.map((l, i) => <li key={i}>{l.qty} × {l.description}</li>)}
             </ul>
           )}
+          {info && !blocked && <AlsoOnInvoice list={others} ticked={also} onChange={setPicked} />}
         </Panel>
         <Panel title="Invoice">
           <Field label="Invoice number (from the booklet)" required

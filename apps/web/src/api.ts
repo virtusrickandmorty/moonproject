@@ -349,10 +349,12 @@ export interface BookletFigures {
 /** What the booklet panel needs: the three figures; the rest is shown when the server sent it. */
 export type BookletShown = Pick<BookletFigures, 'grossCents' | 'vatableSalesCents' | 'vatCents'> & Partial<BookletFigures>;
 /** GET /api/jo/releases/:id/invoice-info. */
-export interface ReleaseInvoiceInfo { release: ReleasePick; lines: { lineNo: number; qty: number; description: string; amountCents: number }[]; booklet: BookletFigures; depositAppliedCents: number }
+export interface ReleaseInvoiceInfo { release: ReleasePick; lines: { lineNo: number; qty: number; description: string; amountCents: number }[]; booklet: BookletFigures; depositAppliedCents: number; others?: Uninvoiced[] }
+/** An earlier release of the same job order with no invoice yet, to put on the same invoice (the owner's request, Nov 2026). */
+export interface Uninvoiced { id: string; number: string; date: string; totalCents: number }
 /** POST /api/jo/releases/preview: the release as it would be recorded and its invoice figures. */
-export interface ReleasePreview { release: Preview & { doc: { balanceDueCents: number; totalCents: number; creditDueDate?: string } }; booklet: BookletFigures; depositAppliedCents: number }
-export interface ReleaseBody { release: unknown; invoice: { invoiceNumber: string; note?: string } | null }
+export interface ReleasePreview { release: Preview & { doc: { balanceDueCents: number; totalCents: number; creditDueDate?: string } }; booklet: BookletFigures; depositAppliedCents: number; uninvoiced?: Uninvoiced[] }
+export interface ReleaseBody { release: unknown; invoice: { invoiceNumber: string; note?: string; alsoReleaseIds?: string[] } | null }
 /** GET /api/jo/customers/:id/wearers: a customer's groups and active wearers with the size on file. */
 export interface WearerPick { personId: string; wearerName: string; groupId: string | null; sizeMode: 'preset' | 'measured'; size?: string; jerseyName?: string; jerseyNumber?: string }
 export interface CustomerWearers { groups: { id: string; name: string }[]; wearers: WearerPick[] }
@@ -1398,9 +1400,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     joDpInfo: (id: string) => call<DpInfo>('GET', `/api/jo/orders/${encodeURIComponent(id)}/dp-info`),
     joPickOrders: (q: string) => call<JoPick[]>('GET', `/api/jo/pick/orders?${new URLSearchParams({ q })}`),
     joPickReleases: (q: string) => call<ReleasePick[]>('GET', `/api/jo/pick/releases?${new URLSearchParams({ q })}`),
-    joReleaseInfo: (id: string) => call<ReleaseInvoiceInfo>('GET', `/api/jo/releases/${encodeURIComponent(id)}/invoice-info`),
+    joReleaseInfo: (id: string, also: string[] = []) => call<ReleaseInvoiceInfo>('GET', `/api/jo/releases/${encodeURIComponent(id)}/invoice-info${also.length ? `?also=${also.join(',')}` : ''}`),
     joWearers: (customerId: string) => call<CustomerWearers>('GET', `/api/jo/customers/${encodeURIComponent(customerId)}/wearers`),
-    joReleasePreview: (release: unknown) => call<ReleasePreview>('POST', '/api/jo/releases/preview', { release }),
+    /** `alsoReleaseIds`: earlier releases of the job order to put on the same invoice; the booklet figures include them. */
+    joReleasePreview: (release: unknown, alsoReleaseIds: string[] = []) => call<ReleasePreview>('POST', '/api/jo/releases/preview', { release, ...(alsoReleaseIds.length ? { alsoReleaseIds } : {}) }),
     /** The release (REL-) and, unless the invoice is to follow (invoice: null), its invoice record, in one transaction. */
     joRelease: (b: ReleaseBody, expectedTotalCents: number, key: string) =>
       call<{ release: PostResult; invoiceRecord: PostResult | null }>('POST', '/api/jo/releases', { ...b, expectedTotalCents }, idem(key)),

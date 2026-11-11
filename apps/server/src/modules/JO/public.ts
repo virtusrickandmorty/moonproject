@@ -278,7 +278,7 @@ export function invoiceSaleLines(db: Db) {
   return db.prepare(`SELECT i.document_id AS id, i.customer_id AS customerId, i.customer_name AS customerName,
     i.job_order_id AS jobOrderId, l.line_no AS lineNo, o.description, o.kind,
     l.qty, l.amount_cents AS grossCents
-    FROM jo_invoice_records i JOIN jo_release_lines l ON l.document_id = i.release_id
+    FROM jo_invoice_records i JOIN jo_invoice_covers c ON c.document_id = i.document_id JOIN jo_release_lines l ON l.document_id = c.release_id
     JOIN jo_lines o ON o.document_id = i.job_order_id AND o.line_no = l.line_no
     ORDER BY i.document_id, l.line_no`).all() as { id: string; customerId: string; customerName: string;
       jobOrderId: string; lineNo: number; description: string; kind: string; qty: number; grossCents: number }[];
@@ -296,8 +296,8 @@ export function releasesAwaitingInvoice(db: Db, asOf: string) {
     JOIN documents j ON j.id = r.job_order_id JOIN jo_orders o ON o.document_id = j.id
     LEFT JOIN jo_release_lines l ON l.document_id = d.id
     WHERE d.business_date <= ? AND d.status = 'posted'
-      AND NOT EXISTS (SELECT 1 FROM jo_invoice_records i JOIN documents x ON x.id = i.document_id
-        WHERE i.release_id = d.id AND x.status = 'posted')
+      AND NOT EXISTS (SELECT 1 FROM jo_invoice_covers c JOIN documents x ON x.id = c.document_id
+        WHERE c.release_id = d.id AND x.status = 'posted')
     GROUP BY r.document_id HAVING releasedCents > 0 ORDER BY d.business_date, d.number`).all(asOf) as {
       id: string; number: string; date: string; jobOrderId: string; jobOrderNumber: string;
       customerId: string; customerName: string; releasedCents: number }[];

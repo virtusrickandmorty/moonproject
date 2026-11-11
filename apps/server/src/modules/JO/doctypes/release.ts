@@ -244,7 +244,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
   /** Its invoice record: cancel that first (the release stays; a new invoice record can then be recorded for it). */
   dependents(db, documentId) {
     return db
-      .prepare(`SELECT d.id, d.number FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.release_id = ? AND d.status = 'posted'`)
+      .prepare(`SELECT d.id, d.number FROM jo_invoice_covers c JOIN documents d ON d.id = c.document_id WHERE c.release_id = ? AND d.status = 'posted'`)
       .all(documentId) as { id: string; number: string }[];
   },
 
