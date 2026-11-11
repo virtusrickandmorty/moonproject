@@ -70,7 +70,8 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
     {error && <Notice>{error}</Notice>}
     {rows === null && !error && <Loading />}
     {rows !== null && shown?.length === 0 && <p className="text-sm text-slate-500">Nothing needs your attention.</p>}
-    <ul className={all ? undefined : 'lg:grid lg:grid-cols-2 lg:gap-x-10 lg:[&>li:nth-child(2)]:border-0'}>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} at={all ? note?.at : undefined} action={note && !note.read &&
+    {/* Two columns of items only when the card itself is wide (alone across the screen), not beside Today. */}
+    <ul className={all ? undefined : '@3xl:grid @3xl:grid-cols-2 @3xl:gap-x-10 @3xl:[&>li:nth-child(2)]:border-0'}>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} at={all ? note?.at : undefined} action={note && !note.read &&
       <button type="button" disabled={busy === note.id} onClick={() => void markRead(note.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />; })}</ul>
     {more && <button type="button" onClick={() => void load(rows?.length ?? 0)} className="text-sm text-indigo-700 hover:underline">Show more</button>}
     {!all && <Link to="/dash/notifications" className="text-sm text-indigo-700 hover:underline">See all notifications</Link>}
@@ -212,10 +213,13 @@ export function HomeContent({ home }: { home: DashHomeData }) {
   const hidden = SHOWN_ELSEWHERE[home.role] ?? [];
   const figures = home.widgets.filter((w) => !work.includes(w) && !hidden.includes(w.key));
   return <div className="space-y-4">
-    {/* Today's list first (the owner's request, Nov 2026), then what needs attention, then the cards. */}
-    <TodayList />
-    <HomeCards attention={<Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>}
-      more={widgetCards(figures)} />
+    {/* Today and what needs attention side by side on a computer (the owner's request, Nov 2026), ending level; one under
+        the other on a phone. With nothing for today, Needs attention takes the whole width. Then the cards. */}
+    <div className="grid items-stretch gap-4 lg:[&:has(>:nth-child(2))]:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] [&>*]:min-w-0 [&>section]:h-full [&>div>section]:h-full">
+      <TodayList />
+      <div className="@container"><Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications></div>
+    </div>
+    <HomeCards more={widgetCards(figures)} />
     {home.role === 'owner' && <OwnerHealth />}
     {home.showCharts && <OwnerCharts />}
     {work.length > 0 && <details className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
