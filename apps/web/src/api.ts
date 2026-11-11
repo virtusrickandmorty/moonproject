@@ -447,6 +447,12 @@ export interface FloorJob {
   /** The worker's own steps (the lines show only these), and how many lines are set up for production. */
   mySteps: string[]; setUp: number;
 }
+/** The floor app's bell (the owner's request, Nov 2026): a new job on the worker's steps, or one due tomorrow, today or late. */
+export interface FloorNote {
+  id: string; kind: 'late' | 'today' | 'tomorrow' | 'new'; read: boolean;
+  jobOrderNumber: string; customerName: string; dueDate: string; rush: boolean;
+  lineNo: number; description: string; stepId: number; stepName: string; left: number; ready: number; at?: string;
+}
 export interface FloorRecord { jobOrderId: string; lineNo: number; stepId: number; pieces: number; wearers?: { rowNo: number; pieces: number }[]; part?: 'upper' | 'lower'; again?: true }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
@@ -1435,6 +1441,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     floorJob: (ref: string) => call<FloorJob>('GET', `/api/prd/floor/jobs/${encodeURIComponent(ref)}`),
     floorRecord: (body: FloorRecord) => call<{ id: string; pieces: number; amountCents: number; waiting: true }>('POST', '/api/prd/floor/record', body),
     floorOpen: () => call<FloorOpen>('GET', '/api/prd/floor/open'),
+    floorNotifications: () => call<FloorNote[]>('GET', '/api/prd/floor/notifications'),
+    floorRead: (ids: string[]) => call<{ read: number }>('POST', '/api/prd/floor/notifications/read', { ids }),
     myPayslips: () => call<{ payslips: OwnPayslip[] }>('GET', '/api/pay/my-payslips'),
     prdChecks: () => call<PrdChecks>('GET', '/api/prd/checks'),
     prdChecksCount: () => call<{ waiting: number }>('GET', '/api/prd/checks/count'),

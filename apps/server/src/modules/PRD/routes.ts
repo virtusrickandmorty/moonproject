@@ -13,6 +13,7 @@ import { activeEmployees } from './emp.ts';
 import { carryWarnings } from './carry.ts';
 import { entriesByJobOrder, jobSummary, reassignWorker } from './summary.ts';
 import { floorJob, floorOpen, floorRecord, floorToday } from './floor.ts';
+import { floorNotifications, readFloorNotifications } from './floor-bell.ts';
 import { approveScan, floorChecks, rejectScan, setWorkerSteps, waitingCount, workerSteps } from './checks.ts';
 import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearerPieces, wearersDone, type StepAction } from './production.ts';
 
@@ -68,6 +69,10 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
     return write(() => floorRecord(engineEnv(deps), { userId: u.userId, permissions: u.permissions }, req.body, today(clock), stamp(clock)));
   });
   app.get('/api/prd/floor/open', { config: { permission: 'prd.floor' } }, async (req) => floorOpen(db, currentUser(req).userId));
+  // The floor app's bell (floor-bell.ts): new jobs on the worker's steps and jobs falling due; each worker's own reads.
+  app.get('/api/prd/floor/notifications', { config: { permission: 'prd.floor' } }, async (req) => floorNotifications(db, currentUser(req).userId, today(clock)));
+  app.post('/api/prd/floor/notifications/read', { config: { permission: 'prd.floor' } }, async (req) =>
+    write(() => readFloorNotifications(db, currentUser(req).userId, req.body, today(clock), stamp(clock))));
 
   // The production head's check of what workers scanned (checks.ts, the owner's request, Nov 2026).
   app.get('/api/prd/checks', { config: { permission: 'prd.verify' } }, async (req) => {
