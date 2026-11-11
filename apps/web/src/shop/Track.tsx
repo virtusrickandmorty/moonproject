@@ -5,16 +5,12 @@
 import { useState, type FormEvent } from 'react';
 import { PageHero, SeasonDoodles } from './Home.tsx';
 import { SHOP_CONTACT } from './products.ts';
+import { StatusJourney } from './StatusJourney.tsx';
 
 interface Tracked {
   kind: 'online' | 'job_order'; number: string; asked?: string; status: string; statusLabel: string; placedAt: string; dueDate?: string;
   pieces: number; fulfilment?: 'pickup' | 'delivery'; deliveryOption?: string | null; lines?: { description: string; qty: number }[];
 }
-/** The steps each kind of order goes through, and where its status sits on them. */
-export const STEPS: Record<Tracked['kind'], { steps: string[]; at: Record<string, number> }> = {
-  job_order: { steps: ['Order received', 'In production', 'Ready for release', 'Released'], at: { open: 0, in_production: 1, ready: 2, partially_released: 3, released: 3, closed: 3 } },
-  online: { steps: ['Order placed', 'Payment sent', 'Paid · being prepared', 'Ready / sent', 'Completed'], at: { awaiting_payment: 0, payment_sent: 1, confirmed: 2, ready: 3, completed: 4 } },
-};
 const day = (d: string) => new Date(d.length === 10 ? `${d}T00:00:00+08:00` : d).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' });
 
 export function Track({ query }: { query: string }) {
@@ -36,8 +32,6 @@ export function Track({ query }: { query: string }) {
     finally { setBusy(false); }
   };
 
-  const flow = found ? STEPS[found.kind] : null;
-  const at = found && flow ? flow.at[found.status] ?? -1 : -1;
   return (
     <>
     <PageHero eyebrow="Track your order" title={<>Where is <span className="text-emerald-300">my order?</span></>}
@@ -51,7 +45,7 @@ export function Track({ query }: { query: string }) {
     <section className="mx-auto max-w-3xl px-4 pb-6 pt-2 sm:px-6">
       {error && <p role="alert" className="mt-5 rounded-2xl bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-800">{error}</p>}
 
-      {found && flow && (
+      {found && (
         <div className="relative mt-8 space-y-5 overflow-hidden rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-8" aria-live="polite">
           <SeasonDoodles seed={19} spots={['tr']} size="size-12" />
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -61,9 +55,7 @@ export function Track({ query }: { query: string }) {
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">Placed {day(found.placedAt)}</span>
           </div>
-          {at >= 0 && <ol className="grid gap-1 text-center text-[11px] font-semibold sm:text-xs" style={{ gridTemplateColumns: `repeat(${flow.steps.length}, minmax(0, 1fr))` }}>
-            {flow.steps.map((s, i) => <li key={s} className={i <= at ? 'text-indigo-700' : 'text-slate-400'}><span className={`mx-auto mb-1 block h-1.5 rounded-full ${i <= at ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-hidden="true" />{s}</li>)}
-          </ol>}
+          <StatusJourney key={`${found.number}-${found.status}`} kind={found.kind} status={found.status} fulfilment={found.fulfilment} />
           <dl className="grid gap-3 text-sm sm:grid-cols-3">
             {found.dueDate && <div><dt className="text-slate-500">Promised for</dt><dd className="font-semibold">{day(found.dueDate)}</dd></div>}
             {found.kind === 'online' && found.fulfilment && <div><dt className="text-slate-500">Gets it by</dt><dd className="font-semibold">{found.fulfilment === 'delivery' ? `Delivery${found.deliveryOption ? ` (${found.deliveryOption})` : ''}` : 'Pickup at the shop'}</dd></div>}

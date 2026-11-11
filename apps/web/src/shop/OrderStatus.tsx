@@ -7,7 +7,7 @@
  */
 import type { CustomerOrder } from '../api.ts';
 import { SHOP_CONTACT } from './products.ts';
-import { STEPS } from './Track.tsx';
+import { STEPS, StatusJourney } from './StatusJourney.tsx';
 
 const day = (d: string) => new Date(d.length === 10 ? `${d}T00:00:00+08:00` : d).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' });
 export const pcs = (n: number) => `${n} ${n === 1 ? 'piece' : 'pieces'}`;
@@ -29,6 +29,7 @@ function ItemSteps({ steps }: { steps: NonNullable<CustomerOrder['lines'][number
       {steps.map((s, i) => (
         <li key={`${s.name}-${i}`} className={`rounded-full px-2.5 py-0.5 font-semibold ${
           s.state === 'done' ? 'bg-emerald-100 text-emerald-800' : s.state === 'now' ? 'bg-indigo-600 text-white' : i === next ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : 'bg-white text-slate-500 ring-1 ring-slate-200'}`}>
+          {s.state === 'now' && <span className="mr-1.5 inline-block size-1.5 rounded-full bg-white align-middle motion-safe:animate-pulse" aria-hidden="true" />}
           {s.state === 'done' ? `✓ ${s.name}` : s.state === 'now' ? `${s.name} · now` : i === next ? `${s.name} · next` : s.name}
         </li>
       ))}
@@ -50,9 +51,7 @@ export function OrderStatus({ order, title = 'Your order' }: { order: CustomerOr
         <p className="mt-1 text-2xl font-extrabold">{stepWords(order, flow.steps, at)}</p>
         <p className="mt-1 text-sm text-slate-600">Promised for <b className="text-slate-900">{day(order.dueDate)}</b> · <span className="whitespace-nowrap">Job order no. {order.number}</span></p>
       </div>
-      {at >= 0 && <ol className="grid gap-1 text-center text-[11px] font-semibold sm:text-xs" style={{ gridTemplateColumns: `repeat(${flow.steps.length}, minmax(0, 1fr))` }}>
-        {flow.steps.map((s, i) => <li key={s} className={i <= at ? 'text-indigo-700' : 'text-slate-400'}><span className={`mx-auto mb-1 block h-1.5 rounded-full ${i <= at ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-hidden="true" />{s}</li>)}
-      </ol>}
+      <StatusJourney key={order.stage} kind="job_order" status={order.stage} />
       <ul className="space-y-3">
         {order.lines.map((l, i) => (
           <li key={i} className="rounded-2xl bg-slate-50 p-4">

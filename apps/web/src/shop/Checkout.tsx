@@ -14,6 +14,7 @@ import { useShop } from './store.tsx';
 import { StarPicker } from './Stars.tsx';
 import { base64, prepare } from './Support.tsx';
 import { Loading } from '../components/ui.tsx';
+import { StatusJourney } from './StatusJourney.tsx';
 
 const input = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -160,7 +161,6 @@ interface CustomerOrder {
   /** The items the buyer has rated already. */
   reviewed: string[];
 }
-const STEPS: [Status[], string][] = [[['awaiting_payment'], 'Order placed'], [['payment_sent'], 'Payment sent'], [['confirmed'], 'Payment confirmed'], [['ready'], 'Ready / sent'], [['completed'], 'Completed']];
 const ORDER_OF: Status[] = ['awaiting_payment', 'payment_sent', 'confirmed', 'ready', 'completed'];
 const when = (iso: string) => new Date(iso).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
@@ -245,8 +245,7 @@ export function OrderStatus({ number, query }: { number: string; query: string }
     <section className="mx-auto max-w-5xl px-4 pb-16 pt-10 sm:px-6">
       <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Order {o.number}</p>
       <div className={`mt-3 rounded-3xl p-6 ${tone}`} role="status"><h1 className="text-2xl font-extrabold sm:text-3xl">{title}</h1><p className="mt-2">{text}</p></div>
-      {at >= 0 && <ol className="mt-6 grid grid-cols-5 gap-1 text-center text-[11px] font-semibold sm:text-xs">{STEPS.map(([s, label], i) => (
-        <li key={label} className={i <= at ? 'text-indigo-700' : 'text-slate-400'}><span className={`mx-auto mb-1 block h-1.5 rounded-full ${i <= at ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-hidden="true" />{label}<span className="sr-only">{s.includes(o.status) ? ' (now)' : ''}</span></li>))}</ol>}
+      {at >= 0 && <div className="mt-6 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5 sm:p-5"><StatusJourney key={o.status} kind="online" status={o.status} fulfilment={o.fulfilment} /></div>}
       {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{error}</p>}
       {o.status === 'completed' && <RateItems order={o} token={token} onRated={(reviewed) => setO({ ...o, reviewed })} />}
 

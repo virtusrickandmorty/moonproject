@@ -14,7 +14,7 @@ const S = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap:
 /** A stitched line that runs along while its step is lit: `period` is the length of one dash and gap, so the run is seamless. */
 const run = (period: number) => ({ '--dash': -period * 2 }) as CSSProperties;
 /** 120 × 90 drawings in one line style; a second colour (the accent) marks what the step adds. The ws- parts move (index.css). */
-const DRAWINGS: Record<string, ReactNode> = {
+export const DRAWINGS: Record<string, ReactNode> = {
   design: <>
     <rect x="18" y="12" width="84" height="56" rx="5" {...S} /><path d="M50 78h20M60 68v10" {...S} />
     <path d="M48 26l-10 6 4 9 4-2v17h28V39l4 2 4-9-10-6a8 8 0 0 1-24 0Z" {...S} pathLength={1} className="ws-draw text-sky-300" />
