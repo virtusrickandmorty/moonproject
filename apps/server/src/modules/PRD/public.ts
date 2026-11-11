@@ -77,6 +77,16 @@ export function lineIsSet(db: Db, jobOrderId: string, lineNo: number, descriptio
   return matchCatalogItem(db, description)?.unit === 'set' || saysSet(description);
 }
 
+/**
+ * A job order item's production steps as its customer sees them on their order link (the owner's request, Nov 2026): each
+ * step's name in the item's own order, done, being worked on now, or later. Steps marked not needed are left out; never the
+ * pieces, the workers or the rates. Empty before the item's steps are set up.
+ */
+export function customerSteps(db: Db, jobOrderId: string, lineNo: number): { name: string; state: 'done' | 'now' | 'later' }[] {
+  return (lineRoute(db, jobOrderId, lineNo) ?? []).filter((s) => s.status !== 'not_needed')
+    .map((s) => ({ name: s.name, state: s.status === 'completed' ? 'done' : s.status === 'in_progress' ? 'now' : 'later' }));
+}
+
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
   return lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({ name, status })) ?? [];
 }

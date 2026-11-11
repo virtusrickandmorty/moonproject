@@ -19,6 +19,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { catalogItemRef } from '../CAT/public.ts';
 import { customerOrderView, jobOrdersWithWearers, type CustomerOrderView } from '../JO/public.ts';
+import { customerSteps } from '../PRD/public.ts';
 import { customerRef, normalizePhone } from '../CUS/public.ts';
 
 /** The measurements a person's chart keeps (CUS), each with its words and how to take it: the measuring guide. */
@@ -326,11 +327,17 @@ export function myAnswer(db: Db, token: string, key: string) {
   return answerOf(db, id);
 }
 
+/** A job order item on the order link: with its production steps while the job order is being made. */
+type LinkOrder = Omit<CustomerOrderView, 'lines'> & {
+  lines: (Omit<CustomerOrderView['lines'][number], 'lineNo'> & { steps?: ReturnType<typeof customerSteps> })[];
+};
+
 /**
  * The job orders made from an answer, as the person sees them on their own link (the owner's request, Nov 2026): found by
- * the wearers made for the answer's people, and showing only those wearers (a group member sees their own pieces).
+ * the wearers made for the answer's people, and showing only those wearers (a group member sees their own pieces). While a
+ * job order is open or in production, each item has its production steps: done, now, later (the owner's request, Nov 2026).
  */
-export function ordersOf(db: Db, responseId: string): CustomerOrderView[] {
+export function ordersOf(db: Db, responseId: string): LinkOrder[] {
   const people = db.prepare('SELECT DISTINCT person_id FROM olk_wearers WHERE response_id = ?').pluck().all(responseId) as string[];
   const mine = new Set(people);
   const seen = new Set<string>();
@@ -338,7 +345,11 @@ export function ordersOf(db: Db, responseId: string): CustomerOrderView[] {
     const o = customerOrderView(db, id, mine);
     if (!o || seen.has(o.number)) return [];
     seen.add(o.number);
-    return [o];
+    const making = o.stage === 'open' || o.stage === 'in_production';
+    return [{ ...o, lines: o.lines.map(({ lineNo, ...l }) => {
+      const steps = making ? customerSteps(db, id, lineNo) : [];
+      return steps.length ? { ...l, steps } : l;
+    }) }];
   });
 }
 
