@@ -222,13 +222,14 @@ export function kpiShares(cards: DashCards): Record<string, { share: number; lab
  * The home's cards: Needs attention across the top (the owner's request, Oct 2026), the headline figures, the floor and
  * the week, then the calendar, the stages and the role's other cards (`more`: VAT, cancellations...) in an even grid.
  */
-export function CardsLayout({ cards, attention, more = [] }: { cards: DashCards | null; attention: ReactNode; more?: ReactNode[] }) {
+export function CardsLayout({ cards, attention, more = [] }: { cards: DashCards | null; attention?: ReactNode; more?: ReactNode[] }) {
   const bottom = [cards?.calendar && <CalendarCard key="cal" calendar={cards.calendar} today={cards.asOf} />, cards?.stages && <StagesCard key="stages" stages={cards.stages} />, ...more].filter(Boolean);
   // Four cards make two rows of two; three, one row of three.
   const columns = bottom.length === 4 ? 'lg:grid-cols-2 2xl:grid-cols-4' : bottom.length >= 3 ? 'lg:grid-cols-3' : bottom.length === 2 ? 'lg:grid-cols-2' : '';
   return <div className="space-y-4">
-    {/* Needs attention first, the whole width (the owner's request, Oct 2026): what to act on before the figures. */}
-    <div className="min-w-0">{attention}</div>
+    {/* Needs attention first (the owner's request, Oct 2026): what to act on before the figures. The home puts it beside
+        Today itself (Home.tsx), so it comes here only when given. */}
+    {attention && <div className="min-w-0">{attention}</div>}
     {cards && <KpiStrip kpis={cards.kpis} shares={kpiShares(cards)} />}
     {cards && (cards.jobs || cards.activity) && <div className={`grid gap-4 ${cards.jobs && cards.activity ? 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}`}>
       {cards.jobs && <JobsCard jobs={cards.jobs} />}
@@ -239,7 +240,7 @@ export function CardsLayout({ cards, attention, more = [] }: { cards: DashCards 
   </div>;
 }
 
-export function HomeCards({ attention, more }: { attention: ReactNode; more?: ReactNode[] }) {
+export function HomeCards({ attention, more }: { attention?: ReactNode; more?: ReactNode[] }) {
   const [cards, setCards] = useState<DashCards | null>(null);
   useEffect(() => { void api.dashCards().then(setCards, () => setCards(null)); }, []);
   // Live (the owner's request, Oct 2026): a change on any computer shows here too.
