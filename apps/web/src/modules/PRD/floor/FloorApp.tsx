@@ -6,12 +6,13 @@
  * signed-in worker's own pieces, today, and they count once the production head approves them (the owner's request, Nov 2026).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { api, ApiError, type FloorJob, type FloorOpen, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
+import { api, ApiError, type FloorJob, type FloorNote, type FloorOpen, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
 import { Earnings } from '../../PAY/entry.tsx';
 import { setUnattended, startLive, stopLive, useLiveReload } from '../../../live.ts';
 import { peso } from '../../../components/ui.tsx';
 import { jobOrderFromScan, liveCameraAllowed, readQrPhoto, useQrCamera } from '../../../components/QrScan.tsx';
+import { BellIcon, useBellRing } from '../../../shell/BellIcon.tsx';
 
 const dayName = (d: string, o: Intl.DateTimeFormatOptions) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', ...o });
 const short = (d: string) => dayName(d, { month: 'short', day: 'numeric' });
@@ -76,6 +77,82 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
       </section>
     </div>
   );
+}
+
+const NOTE_TAGS: Record<FloorNote['kind'], [string, string]> = {
+  late: ['Late', 'bg-red-50 text-red-800'], today: ['Due today', 'bg-amber-50 text-amber-800'],
+  tomorrow: ['Due tomorrow', 'bg-sky-50 text-sky-800'], new: ['New job', 'bg-indigo-50 text-indigo-700'],
+};
+const BELL_SHOWS = 30;
+
+/**
+ * The bell (the owner's request, Nov 2026): a new job on the worker's own steps, and a job on them due tomorrow, due
+ * today or late (server floor-bell.ts). It rings like the office's bell while something is unread, and jumps with "+N"
+ * when more come in. Opening it shows the list and marks them read; a tap opens the job on that step.
+ */
+function FloorBell() {
+  const [notes, setNotes] = useState<FloorNote[]>([]);
+  const [shown, setShown] = useState<FloorNote[] | null>(null); // the list as it was when opened: the unread keep their dot
+  const seen = useRef<Set<string> | null>(null);
+  const [news, setNews] = useState({ times: 0, added: 0 });
+  const load = useCallback(() => void api.floorNotifications().then((list) => {
+    const fresh = list.filter((n) => !n.read).map((n) => n.id);
+    const added = seen.current ? fresh.filter((id) => !seen.current!.has(id)).length : 0;
+    if (added > 0) setNews((n) => ({ times: n.times + 1, added }));
+    seen.current = new Set([...(seen.current ?? []), ...fresh]);
+    setNotes(list);
+  }, () => undefined), []);
+  useEffect(load, [load]);
+  useLiveReload(load);
+  const unread = notes.filter((n) => !n.read);
+  const ring = useBellRing(unread.length > 0 && !shown);
+  const open = () => {
+    setShown(notes);
+    if (unread.length) void api.floorRead(unread.slice(0, 200).map((n) => n.id)).then(load, () => undefined);
+  };
+  const count = unread.length > 99 ? '99+' : String(unread.length);
+  return (
+    <>
+      <button type="button" aria-label={unread.length ? `Notifications, ${count} unread` : 'Notifications'} onClick={open}
+        className="bell relative grid size-11 place-items-center rounded-full bg-white text-slate-700 shadow-sm">
+        <BellIcon ring={ring} news={news.times} added={news.added} />
+        {unread.length > 0 && <span key={count} aria-hidden="true" className="bell-badge absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f95f53] px-1 text-[10px] font-bold text-white ring-2 ring-page">{count}</span>}
+      </button>
+      {shown && (
+        <Sheet title="Notifications" onClose={() => setShown(null)}>
+          {shown.length === 0 ? <p className="pb-4 text-[15px] text-slate-600">Nothing yet. You will see here when a job comes to your steps, and when one is almost due.</p> : (
+            <ul className="-mx-5 max-h-[60vh] divide-y divide-slate-100 overflow-y-auto">
+              {shown.slice(0, BELL_SHOWS).map((n) => (
+                <li key={n.id}>
+                  <button type="button" onClick={() => { setShown(null); navigate(`/floor/job/${encodeURIComponent(n.jobOrderNumber)}?line=${n.lineNo}&step=${n.stepId}`); }}
+                    className={`flex w-full gap-3 px-5 py-3 text-left ${n.read ? 'opacity-70' : ''}`}>
+                    <span aria-hidden="true" className={`mt-2 size-2 shrink-0 rounded-full ${n.read ? 'bg-transparent' : 'bg-indigo-600'}`} />
+                    <span className="min-w-0 flex-1 space-y-1">
+                      <span className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-bold text-indigo-600">{n.jobOrderNumber} · {n.stepName}</span>
+                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${NOTE_TAGS[n.kind][1]}`}>{NOTE_TAGS[n.kind][0]}</span>
+                      </span>
+                      <span className="block text-[15px] font-bold">{n.description} <span className="font-semibold text-slate-500">· {n.customerName}</span></span>
+                      <span className="block text-[13px] font-semibold text-slate-500">{noteDetail(n)}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Sheet>
+      )}
+    </>
+  );
+}
+
+/** The line under a notification: the pieces left on the step, when it is due, and whether they are ready. */
+export function noteDetail(n: FloorNote): string {
+  const pcs = `${n.left} pc${n.left === 1 ? '' : 's'}`;
+  const ready = n.ready >= n.left ? 'ready for you' : n.ready > 0 ? `${n.ready} ready for you` : 'not ready yet';
+  if (n.kind === 'late') return `${pcs} left · was due ${short(n.dueDate)}${n.rush ? ' · rush' : ''}`;
+  if (n.kind === 'new') return `${pcs} to do · due ${short(n.dueDate)} · ${ready}`;
+  return `${pcs} left · ${ready}${n.rush ? ' · rush' : ''}`;
 }
 
 /**
@@ -164,6 +241,7 @@ function TodayScreen({ me }: { me: Me }) {
         <div className="flex items-center gap-2">
         {/* Also on the office screens (a production head): back to them. */}
         {me.permissions.includes('prd.view') && <button type="button" onClick={() => navigate('/')} className="h-11 rounded-full border border-slate-300 px-4 text-sm font-bold">Office</button>}
+        <FloorBell />
         <button type="button" aria-label={`Signed in as ${me.displayName}. Sign out`} onClick={() => void api.logout().finally(() => location.assign('/sign-in'))}
           className="grid size-11 place-items-center rounded-full bg-indigo-600 text-[15px] font-extrabold text-white">{initials}</button>
         </div>
@@ -219,13 +297,14 @@ function Scans({ scans }: { scans: FloorScan[] }) {
 }
 
 /**
- * The open job orders with pieces left on the steps the worker does (ticked on their employee page), rush first. A worker
- * with more than one step gets a tab for each (the owner's request, Nov 2026), with how many jobs wait on it; the tab is in
- * the address (?step=), so coming back from a job opens the same one.
+ * The open job orders with pieces left on the steps the worker does (ticked on their employee page), rush first. Each of
+ * their steps with work on it gets a tab (the owner's requests, Nov 2026), with how many jobs wait on it; a step with
+ * none shows no tab, and one step with work needs no tabs. The tab is in the address (?step=), so coming back from a job
+ * opens the same one.
  */
 export function stepTabs(steps: FloorOpen['steps'], jobs: FloorOpen['jobs'], asked?: number) {
-  const tabs = steps.map((s) => ({ ...s, count: jobs.filter((j) => j.stepId === s.id).length }));
-  const on = tabs.find((t) => t.id === asked) ?? tabs.find((t) => t.count > 0) ?? tabs[0];
+  const tabs = steps.map((s) => ({ ...s, count: jobs.filter((j) => j.stepId === s.id).length })).filter((t) => t.count > 0);
+  const on = tabs.find((t) => t.id === asked) ?? tabs[0];
   return { tabs, on, jobs: on && tabs.length > 1 ? jobs.filter((j) => j.stepId === on.id) : jobs };
 }
 
@@ -238,9 +317,9 @@ function OpenJobsScreen({ stepId }: { stepId?: number }) {
   const many = tabs.length > 1;
   return (
     <div className="space-y-4">
-      <div>
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-extrabold tracking-tight">Open jobs</h1>
-        {tabs.length === 1 && <p className="text-sm font-semibold text-slate-500">On my step: {tabs[0]!.name}</p>}
+        <FloorBell />
       </div>
       {many && (
         <div role="tablist" aria-label="My steps" className="flex gap-1 overflow-x-auto rounded-2xl bg-slate-200/70 p-1">
@@ -252,8 +331,8 @@ function OpenJobsScreen({ stepId }: { stepId?: number }) {
           ))}
         </div>
       )}
-      {tabs.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">Your steps are not set yet. Ask the office to tick the steps you do (Sewing, Cutting…) on your employee page.</p>
-        : jobs.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">{many ? `No open job has pieces left on ${on!.name} right now.` : 'No open job has pieces left on your steps right now.'}</p> : (
+      {data.steps.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">Your steps are not set yet. Ask the office to tick the steps you do (Sewing, Cutting…) on your employee page.</p>
+        : jobs.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">No open job has pieces left on your steps right now.</p> : (
           <ul className="space-y-2.5" role={many ? 'tabpanel' : undefined} aria-label={many ? on!.name : undefined}>
             {jobs.map((j) => (
               <li key={`${j.jobOrderId}-${j.lineNo}-${j.stepId}`}>
@@ -515,7 +594,10 @@ function EarningsScreen({ me }: { me: Me }) {
   if (!data) return <Waiting />;
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-extrabold tracking-tight">My earnings</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-extrabold tracking-tight">My earnings</h1>
+        <FloorBell />
+      </div>
       <WeekCard week={data.week} today={data.today} />
       {data.week.lines.length > 0 && <div className="space-y-2 rounded-2xl bg-white p-3"><Earnings lines={data.week.lines} /></div>}
       <p className="text-[13px] leading-relaxed text-slate-500">Paid with the weekly payroll after {dayName(data.week.to, { weekday: 'long' })}. SSS, PhilHealth, Pag-IBIG and any cash advance come off then; your payslip below shows each.</p>

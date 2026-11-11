@@ -22,7 +22,7 @@ import { SET_PARTS, availableFor, lineRoute, lineSetup, listSteps, type Part } f
 import { pieceWork } from './public.ts';
 
 /** YYYY-MM-DD plus some days, as calendar arithmetic on the date alone (no clock, no time zone). */
-const addDays = (d: string, n: number) => {
+export const addDays = (d: string, n: number) => {
   const t = new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10) + n));
   return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
 };

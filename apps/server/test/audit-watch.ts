@@ -17,7 +17,7 @@ import type { Db } from '../src/platform/db/driver.ts';
  */
 export const NOT_RECORDS = new Set([
   'audit_log', 'sessions', 'login_attempts', 'idempotency_keys',
-  'dash_notification_reads', 'dash_notification_seen', 'pref_menu_order', 'push_subscriptions', 'push_sent', 'shp_events', 'sys_checks',
+  'dash_notification_reads', 'dash_notification_seen', 'prd_floor_reads', 'pref_menu_order', 'push_subscriptions', 'push_sent', 'shp_events', 'sys_checks',
 ]);
 
 /** Requests that change only bookkeeping by design, with the reason. Keep this list short. */
