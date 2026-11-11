@@ -14,7 +14,7 @@ import { jobOrderRef, jobOrdersOf, joMoney, rosterOf } from '../public.ts';
 import { STAGE_LABELS, currentStage, forStockReason, isAbandoned, moveTo } from '../stages.ts';
 import { addDays } from './job-order.ts';
 import { finishedPieces, finishedWearers, lineProduction } from '../../PRD/public.ts';
-import { latestReceived } from '../received.ts';
+import { latestReceived, stageAfterRelease } from '../received.ts';
 
 /**
  * The lines that may go out now (the owner's rule, Oct 2026: release what is ready, even while other items are still
@@ -226,8 +226,8 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       line.run(h.documentId, l.lineNo, l.qty, l.listCents, l.discountCents, l.amountCents);
       for (const w of l.wearers ?? []) wearer.run(h.documentId, l.lineNo, w.rowNo);
     }
-    const left = lineState(db, doc.jobOrderId).some((l) => l.releasedQty < l.qty); // counts this release: its documents row is in
-    moveTo(db, doc.jobOrderId, left ? 'partially_released' : 'released', h.number, postedBy(db, h));
+    // Counts this release (its documents row is in). Not Released while a delivery's receiver is not typed (received.ts).
+    moveTo(db, doc.jobOrderId, stageAfterRelease(db, doc.jobOrderId), h.number, postedBy(db, h));
   },
 
   afterCancel(db, documentId, h) {

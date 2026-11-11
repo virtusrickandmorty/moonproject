@@ -170,6 +170,8 @@ export interface DocCounts { all: number; posted: number; cancelled: number }
 export interface JoListRow extends DocHeader {
   /** Who, how many pieces, when it is due, rush or not, and how far it is (the list's own row words). */
   customerName?: string; dueDate?: string; priority?: 'normal' | 'rush'; pieces?: number; stage?: string;
+  /** Everything is out, but a delivery's receiver is not typed yet: not Released until it is. */
+  outForDelivery?: boolean;
   balanceDueCents: number; matchedItem: string | null; awaitingInvoice: { id: string; number: string }[]; readyToRelease: boolean;
   /** Made for stock (TPL, the website shop) with finished pieces: where they go instead of a release slip. */
   stockPlace?: { label: string; href: string } | null;

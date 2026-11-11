@@ -108,7 +108,7 @@ export function jobOrderSummary(today: string) {
     const j = row(r);
     if (!j.customerName) return <span className="line-clamp-2 text-slate-700" title={r.summary}>{r.summary}</span>;
     const cancelled = r.status === 'cancelled';
-    const stage = STAGE[j.stage ?? ''];
+    const stage = j.outForDelivery ? ['Out for delivery', 'bg-amber-50 text-amber-800'] as const : STAGE[j.stage ?? ''];
     const late = !cancelled && !!j.dueDate && j.dueDate < today && j.stage !== 'released' && j.stage !== 'closed';
     return (
       <div className={`min-w-0 ${cancelled ? 'text-slate-400 line-through' : ''}`} title={r.summary}>

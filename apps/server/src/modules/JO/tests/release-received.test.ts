@@ -24,7 +24,7 @@ async function release(extra: object) {
   for (const [from, to] of [['open', 'in_production'], ['in_production', 'ready']]) await encoder.post(`/api/jo/orders/${jo.json().id}/stage`, { from, to });
   const r = await encoder.post('/api/jo/releases', { release: { jobOrderId: jo.json().id, lines: [{ lineNo: 1, qty: 2 }], ...extra }, invoice: null, expectedTotalCents: 0 }, idem());
   expect(r.statusCode, r.body).toBe(200);
-  return r.json().release as { id: string; number: string };
+  return { ...r.json().release, jobOrderId: jo.json().id as string } as { id: string; number: string; jobOrderId: string };
 }
 const forDelivery = { claimedBy: 'For delivery', idSeen: 'none', forDelivery: true };
 const received = (id: string, body: object, who: Client = encoder) => who.post(`/api/jo/releases/${id}/received`, body);
@@ -69,6 +69,28 @@ describe('who received a release for delivery', () => {
   it('is only for a release for delivery: one claimed in person already says who', async () => {
     const rel = await release({ claimedBy: 'Coach Placeholder', idSeen: 'school_id' });
     expect((await received(rel.id, { receivedBy: 'Ana', receivedOn: today })).json().code).toBe('NOT_FOR_DELIVERY');
+  });
+
+  it('keeps the job order from Released until who received it is typed (the owner\'s rule, Nov 2026)', async () => {
+    const rel = await release(forDelivery);
+    const status = async () => (await owner.get(`/api/jo/orders/${rel.jobOrderId}/status`)).json() as { stage: string; stageLabel: string };
+    expect(await status()).toMatchObject({ stage: 'partially_released', stageLabel: 'Out for delivery' });
+    const row = (await owner.get('/api/jo/list')).json().find((j: { id: string }) => j.id === rel.jobOrderId);
+    expect(row).toMatchObject({ stage: 'partially_released', outForDelivery: true, readyToRelease: false });
+    const bell = async () => ((await owner.get('/api/dash/notifications')).json() as { kind: string; id: string }[]).filter((n) => n.kind === 'delivery-receiver');
+    expect(await bell()).toEqual([expect.objectContaining({ id: `delivery-receiver:${rel.id}`, href: `/docs/jo.release/${rel.id}` })]);
+
+    expect((await received(rel.id, { receivedBy: 'Ana Halimbawa', receivedOn: today })).statusCode).toBe(200);
+    expect(await status()).toMatchObject({ stage: 'released', stageLabel: 'Released' });
+    expect(await bell()).toEqual([]);
+    // Putting the name right later changes nothing more.
+    expect((await received(rel.id, { receivedBy: 'Ana B. Halimbawa', receivedOn: today })).statusCode).toBe(200);
+    expect((await status()).stage).toBe('released');
+  });
+
+  it('releases at once what was claimed in person', async () => {
+    const rel = await release({ claimedBy: 'Coach Placeholder', idSeen: 'school_id' });
+    expect((await owner.get(`/api/jo/orders/${rel.jobOrderId}/status`)).json()).toMatchObject({ stage: 'released', stageLabel: 'Released' });
   });
 
   it('is refused on a cancelled release, and for those who may not release', async () => {

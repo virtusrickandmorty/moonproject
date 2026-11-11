@@ -12,6 +12,7 @@ import { joMoney } from './public.ts';
 import { awaitingInvoice } from './doctypes/invoice-record.ts';
 import { releasableLines } from './doctypes/release.ts';
 import { currentStage, isAbandoned, stockPlaceOf } from './stages.ts';
+import { isOutForDelivery } from './received.ts';
 
 export type JoListFilters = { q?: string; from?: string; to?: string };
 
@@ -68,6 +69,8 @@ export function joListRoutes(app: FastifyInstance, db: Db, clock: Clock): void {
       // What the row shows instead of the long summary (the owner's request, Oct 2026): who, how many, when, how far.
       customerName: r.customer_name, dueDate: r.due_date, priority: r.priority, pieces: r.pieces,
       stage: currentStage(db, r.id as string),
+      // Everything is out but a delivery's receiver is not typed yet: shown as Out for delivery (the owner's rule, Nov 2026).
+      outForDelivery: r.status === 'posted' && isOutForDelivery(db, r.id as string, currentStage(db, r.id as string)),
       balanceDueCents: r.status === 'posted' ? joMoney(db, r.id as string).balanceDueCents : 0,
       matchedItem: words.length ? matchedItem(db, r.id as string, words) : null,
       // Releases waiting for their booklet invoice (the row's Invoice action); none once cancelled.
@@ -96,7 +99,7 @@ export function joListRoutes(app: FastifyInstance, db: Db, clock: Clock): void {
       if (stage === 'released' || stage === 'closed' || isAbandoned(db, r.id)) continue;
       open++;
       if (stage === 'in_production') inProduction++;
-      if (stage === 'ready' || stage === 'partially_released') ready++;
+      if (stage === 'ready' || (stage === 'partially_released' && !isOutForDelivery(db, r.id, stage))) ready++;
       if (r.dueDate < date) late++;
     }
     return { open, inProduction, ready, late, balanceDueCents };

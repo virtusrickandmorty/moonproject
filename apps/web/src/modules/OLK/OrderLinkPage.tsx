@@ -14,7 +14,7 @@ import { formatPeso } from '@moonproject/shared';
 import type { CustomerOrder, OlkAnswer, OlkGender, OlkGuide, OlkItem, OlkKind, OlkPayHow, OlkPayment, OlkPerson, OlkShare } from '../../api.ts';
 import { SHOP_CONTACT } from '../../shop/products.ts';
 import { base64, prepare } from '../../shop/Support.tsx';
-import { OrderStatus } from '../../shop/OrderStatus.tsx';
+import { OrderStatus, pcs, sizeWords } from '../../shop/OrderStatus.tsx';
 
 interface LinkPage {
   kind: OlkKind; title: string; closesOn: string; closedOn?: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
@@ -187,19 +187,24 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   const team = link.kind === 'team';
   const setPerson = (row: number, change: Partial<PersonForm>) => setPeople((ps) => ps.map((p) => (p.row === row ? { ...p, ...change } : p)));
 
+  // Once the shop has made the job order, its status says it all: what was sent folds away, and changes go through the shop.
+  const ordered = !fresh && !!sent?.orders?.length;
   if (sent) return (
     <Frame title={link.title}>
-      {!fresh && sent.orders?.map((o) => <OrderStatus key={o.number} order={o} />)}
-      {!link.open && !sent.orders?.length && <p className="rounded-2xl bg-indigo-50 p-5 text-indigo-900">The shop is making your job order from these details. Open this link again to see where your order is.</p>}
+      {ordered && sent.orders!.map((o) => <OrderStatus key={o.number} order={o} />)}
+      {!link.open && !ordered && <p className="rounded-2xl bg-indigo-50 p-5 text-indigo-900">The shop is making your job order from these details. Open this link again to see where your order is.</p>}
       <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5" aria-live="polite">
         {fresh ? <>
           <p className="text-2xl font-extrabold text-emerald-700">Thank you, {sent.name.split(' ')[0]}!</p>
           <p className="text-slate-700">{sent.changes ? 'Your changes are saved.' : 'We have your order details.'} The shop will check them and get in touch at {sent.mobile} or {sent.email}.</p>
-        </> : <p className="text-xl font-extrabold">Your order details, {sent.name.split(' ')[0]}</p>}
-        <Summary link={link} answer={sent} />
-        {link.open && personal && <KeepLink url={personal} closesOn={link.closesOn} />}
-        {link.open && <button type="button" className="w-full rounded-full bg-slate-100 py-3 font-semibold text-slate-800 hover:bg-slate-200" onClick={() => { setSent(null); setFresh(false); }}>Change my answer</button>}
-        {!link.open && <p className="text-sm text-slate-600">This link closed on {day(link.closedOn ?? link.closesOn)}. To change anything, call or text the shop at {SHOP_CONTACT.phone}.</p>}
+        </> : !ordered && <p className="text-xl font-extrabold">What you sent</p>}
+        {ordered
+          ? <details className="group"><summary className="cursor-pointer list-none font-semibold text-indigo-700"><span className="group-open:hidden">See what you sent</span><span className="hidden group-open:inline">Hide what you sent</span></summary>
+              <div className="mt-3"><Summary link={link} answer={sent} /></div></details>
+          : <Summary link={link} answer={sent} />}
+        {link.open && !ordered && personal && <KeepLink url={personal} closesOn={link.closesOn} />}
+        {link.open && !ordered && <button type="button" className="w-full rounded-full bg-slate-100 py-3 font-semibold text-slate-800 hover:bg-slate-200" onClick={() => { setSent(null); setFresh(false); }}>Change my answer</button>}
+        {(ordered || !link.open) && <p className="text-sm text-slate-600">{ordered ? 'The shop has made your job order.' : `This link closed on ${day(link.closedOn ?? link.closesOn)}.`} To change anything, call or text the shop at <b className="whitespace-nowrap">{SHOP_CONTACT.phone}</b>.</p>}
       </section>
       {link.payOwn && sent.share && <PayCard pay={link.pay ?? null} share={sent.share} payments={sent.payments ?? []} url={`${base}/answers/${encodeURIComponent(key)}/payment`} onSent={setSent} />}
     </Frame>
@@ -406,17 +411,38 @@ function Measurements({ link, person, onChange }: { link: LinkPage; person: Pers
   );
 }
 
+/**
+ * What the person sent, easy to read on a phone (the owner's request, Nov 2026): for a team, how many players and pieces,
+ * then each player with their number, name on the back and full name; each piece on its own row with its size on the right.
+ */
 function Summary({ link, answer }: { link: LinkPage; answer: OlkAnswer }) {
   const name = (lineNo: number) => link.items.find((it) => it.lineNo === lineNo)?.name ?? `Item ${lineNo}`;
+  const team = link.kind === 'team';
+  const total = answer.people.reduce((s, p) => s + p.pieces.reduce((n, pc) => n + pc.qty, 0), 0);
   return (
-    <ul className="divide-y divide-slate-100 rounded-2xl bg-slate-50 px-4 text-sm">
-      {answer.people.map((p) => (
-        <li key={p.row} className="py-3">
-          {link.kind === 'team' && <p className="font-semibold">{p.number ? `#${p.number} ` : ''}{p.backName}</p>}
-          <p className="text-slate-600">{p.pieces.map((pc) => `${pc.qty} × ${name(pc.lineNo)}${pc.size ? ` (${pc.size})` : pc.customFit ? ' (custom fit)' : ''}`).join(', ')}{p.measureAtShop ? ' · to measure at the shop' : ''}</p>
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-2">
+      {team && <p className="text-sm text-slate-600">{answer.people.length} {answer.people.length === 1 ? 'player' : 'players'} · {pcs(total)}</p>}
+      <ul className="space-y-2">
+        {answer.people.map((p) => {
+          const back = [p.number && `#${p.number}`, p.backName].filter(Boolean).join(' ');
+          const full = p.name && p.name.trim().toUpperCase() !== (p.backName ?? '').trim().toUpperCase() ? p.name : '';
+          return (
+            <li key={p.row} className="rounded-2xl bg-slate-50 px-4 py-3">
+              {team && <p className="mb-1"><b className="uppercase">{back || `Player ${p.row}`}</b>{full && <span className="text-sm text-slate-500"> · {full}</span>}</p>}
+              <ul className="divide-y divide-slate-200/70">
+                {p.pieces.map((pc) => (
+                  <li key={pc.lineNo} className="flex items-center justify-between gap-3 py-1.5">
+                    <span className="min-w-0">{name(pc.lineNo)}</span>
+                    <span className="shrink-0 rounded-full bg-white px-3 py-0.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">{sizeWords(pc.size, !!pc.customFit, pc.qty)}</span>
+                  </li>
+                ))}
+              </ul>
+              {p.measureAtShop && <p className="mt-1 text-sm text-amber-800">To be measured at the shop</p>}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
