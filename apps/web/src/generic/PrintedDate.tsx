@@ -21,9 +21,9 @@ export function usePrintedDate(original?: { businessDate: string }) {
   return { text, setText, ...printedDay(text) };
 }
 
-export function PrintedDateField({ value, onChange, label = 'Date printed on it' }: { value: string; onChange: (v: string) => void; label?: string }) {
+export function PrintedDateField({ value, onChange, label = 'Date printed on it', hint = 'Leave empty for today. Its VAT goes to the month of this date.' }: { value: string; onChange: (v: string) => void; label?: string; hint?: string }) {
   return (
-    <Field label={label} hint="Leave empty for today. Its VAT goes to the month of this date.">
+    <Field label={label} hint={hint}>
       <input type="date" className={`${inputClass} max-w-48`} value={value} onChange={(e) => onChange(e.target.value)} />
     </Field>
   );

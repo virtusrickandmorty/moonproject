@@ -26,15 +26,16 @@ export function usePurForm(type: DocTypeInfo, mode: FormMode, load: (d: DocDetai
  * `side`: shown in So far above the checks (the purchase order's lines); `wide`: laid out like the job order (a wider right
  * column for it, kept in view, with the total, Record and Close or Back under it). In a dialog the dialog shows the title.
  */
-export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurForm>; title: string; input: unknown; errors: string[]; showTotal: boolean; side?: ReactNode; wide?: boolean; children: ReactNode }) {
+export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurForm>; title: string; input: unknown; errors: string[]; showTotal: boolean; side?: ReactNode; wide?: boolean; businessDate?: string; children: ReactNode }) {
   const { type, form, input, errors } = p;
   const [reason, setReason] = useState('');
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
   const closeDialog = useCloseDialog();
-  const preview = () => api.preview(type.key, input);
-  const live = useLive(JSON.stringify([input, form.original?.id]), errors.length === 0, preview);
+  // The day it is dated (a receiving report: the day the goods came); none for today.
+  const preview = () => api.preview(type.key, input, p.businessDate);
+  const live = useLive(JSON.stringify([input, form.original?.id, p.businessDate]), errors.length === 0, preview);
   if (form.original && !reason) return <EditGate original={form.original} typeKey={type.key} onReason={setReason} />;
 
   const openConfirm = () => {
@@ -43,7 +44,7 @@ export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurF
   };
   const record = async (key: string) => {
     try {
-      const r = form.original ? await api.reissue(type.key, form.original.id, input, confirm!.totalCents, reason, key) : await api.post(type.key, input, confirm!.totalCents, key);
+      const r = form.original ? await api.reissue(type.key, form.original.id, input, confirm!.totalCents, reason, key, p.businessDate) : await api.post(type.key, input, confirm!.totalCents, key, p.businessDate);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
       // The server's total differs from what the user confirmed: show the new preview and ask again.
