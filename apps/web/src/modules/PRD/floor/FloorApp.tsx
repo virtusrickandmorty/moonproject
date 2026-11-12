@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import { api, ApiError, type FloorJob, type FloorNote, type FloorOpen, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
 import { Earnings } from '../../PAY/entry.tsx';
-import { setUnattended, startLive, stopLive, useLiveReload } from '../../../live.ts';
+import { setUnattended, startLive, stopLive, toldRead, useLiveReload, useReadElsewhere } from '../../../live.ts';
 import { peso } from '../../../components/ui.tsx';
 import { jobOrderFromScan, liveCameraAllowed, readQrPhoto, useQrCamera } from '../../../components/QrScan.tsx';
 import { BellIcon, useBellRing } from '../../../shell/BellIcon.tsx';
@@ -104,11 +104,12 @@ function FloorBell() {
   }, () => undefined), []);
   useEffect(load, [load]);
   useLiveReload(load);
+  useReadElsewhere('floor', load);
   const unread = notes.filter((n) => !n.read);
   const ring = useBellRing(unread.length > 0 && !shown);
   const open = () => {
     setShown(notes);
-    if (unread.length) void api.floorRead(unread.slice(0, 200).map((n) => n.id)).then(load, () => undefined);
+    if (unread.length) void api.floorRead(unread.slice(0, 200).map((n) => n.id)).then(() => toldRead('floor'), () => undefined);
   };
   const count = unread.length > 99 ? '99+' : String(unread.length);
   return (

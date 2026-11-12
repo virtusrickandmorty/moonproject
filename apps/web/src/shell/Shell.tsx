@@ -3,7 +3,7 @@
  * (H1) and the breadcrumb trail. Laid out like Star Admin 2: a grey top bar with a greeting, and a grey sidebar whose
  * current item is a white pill.
  */
-import { startLive, stopLive, useAppUpdated, useLiveChange, userAway } from '../live.ts';
+import { startLive, stopLive, toldRead, useAppUpdated, useLiveChange, useReadElsewhere, userAway } from '../live.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
@@ -97,11 +97,13 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   // Live only (the owner's request, Oct 2026): it loads on opening a page and on every change on any computer, no timer.
   useEffect(() => void load(), [load, path]);
   useLiveChange(() => void load());
+  useReadElsewhere('dash', () => void load()); // read in another tab, or on the notifications page: the same here
   const markRead = async (ids: string[]) => {
     setBusy(true);
     for (const id of ids) await api.dashRead(id).catch(() => {});
     setUnread((u) => u.filter((n) => !ids.includes(n.id)));
     setBusy(false);
+    toldRead('dash');
   };
   const openOne = async (n: DashNotification) => {
     await markRead([n.id]);

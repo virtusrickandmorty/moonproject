@@ -38,14 +38,24 @@ export function BellIcon({ ring, news, added }: { ring: number; news: number; ad
   );
 }
 
-/** The ring count: rings now and every 12 seconds while `waiting` (something unread, its list closed), not while the tab is hidden. */
+/**
+ * The ring count: rings now and every 12 seconds while `waiting` (something unread, its list closed), not while the tab is
+ * hidden; coming back to the tab, it rings at once (the owner's report, Nov 2026: a tab switched to stayed still).
+ */
 export function useBellRing(waiting: boolean): number {
   const [ring, setRing] = useState(0);
   useEffect(() => {
     if (!waiting) return setRing(0);
-    setRing((r) => r + 1);
-    const t = setInterval(() => { if (!document.hidden) setRing((r) => r + 1); }, BELL_EVERY);
-    return () => clearInterval(t);
+    let t: ReturnType<typeof setInterval> | undefined;
+    const start = () => {
+      setRing((r) => r + 1);
+      clearInterval(t);
+      t = setInterval(() => { if (!document.hidden) setRing((r) => r + 1); }, BELL_EVERY);
+    };
+    const back = () => { if (!document.hidden) start(); };
+    start();
+    document.addEventListener('visibilitychange', back);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', back); };
   }, [waiting]);
   return ring;
 }

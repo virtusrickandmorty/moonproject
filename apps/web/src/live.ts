@@ -140,6 +140,48 @@ export function onLiveChange(l: Listener): () => void {
 }
 
 /**
+ * Notifications marked read (the owner's report, Nov 2026: a duplicated tab's bell went quiet while the first tab kept
+ * ringing for the same ones). A read mark writes no audit row, so the stream above does not carry it: the screen that
+ * marked some read says so (`toldRead`), and every bell and list of that kind loads again (`useReadElsewhere`), in this
+ * tab and in this browser's other tabs. A tab coming back into view loads them again too, for what was read meanwhile on
+ * another computer or phone. 'dash': the ERP's bell and notifications; 'floor': the floor app's bell.
+ */
+export type ReadKind = 'dash' | 'floor';
+const readListeners = new Map<ReadKind, Set<() => void>>();
+let readChannel: BroadcastChannel | null | undefined;
+const heardRead = (kind: ReadKind) => { for (const l of [...(readListeners.get(kind) ?? [])]) l(); };
+const readTabs = () => {
+  if (readChannel === undefined) {
+    readChannel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('moonproject-read');
+    if (readChannel) {
+      readChannel.onmessage = (e: MessageEvent<ReadKind>) => heardRead(e.data);
+      (readChannel as { unref?: () => void }).unref?.(); // where tests run (Node), an open channel must not keep them running
+    }
+  }
+  return readChannel;
+};
+/** Some notifications of this kind were just marked read here. */
+export function toldRead(kind: ReadKind): void {
+  readTabs()?.postMessage(kind);
+  heardRead(kind);
+}
+/** Runs `reload` when notifications of this kind are marked read in this tab or another, and when the tab comes back into view. */
+export function useReadElsewhere(kind: ReadKind, reload: () => void): void {
+  const latest = useRef(reload);
+  latest.current = reload;
+  useEffect(() => {
+    readTabs();
+    const l = () => latest.current();
+    const set = readListeners.get(kind) ?? new Set<() => void>();
+    readListeners.set(kind, set);
+    set.add(l);
+    const back = () => { if (!document.hidden) l(); };
+    document.addEventListener('visibilitychange', back);
+    return () => { set.delete(l); document.removeEventListener('visibilitychange', back); };
+  }, [kind]);
+}
+
+/**
  * Runs `reload` a moment after a change (several changes close together run it once). `about`: only changes to these
  * kinds of record (a document type key like 'jo.job_order', or an audit entity type); none means any change.
  */
