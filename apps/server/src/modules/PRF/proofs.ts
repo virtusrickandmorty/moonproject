@@ -6,8 +6,9 @@
  * is the day the production time starts counting from (Terms: with the downpayment).
  *
  * The link's private part is the key, as with order links (OLK): it shows the job order's items and its due date, never a
- * price, a balance, a phone or an address. Once the design is approved, it also shows the order's status with every wearer
- * (name, size, jersey name and number), so the customer can follow it and spot a wrong name or size.
+ * price, a balance, a phone or an address. Each item lists its wearers (name, size or custom fit, jersey name and number:
+ * the owner's request, Nov 2026), so the customer checks them with the design before approving. Once the design is
+ * approved, it also shows the order's status, so the customer can follow it.
  */
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -98,7 +99,7 @@ export function publicProof(db: Db, token: string) {
   return {
     jobOrderNumber: jo?.number ?? p.job_order_no, version: p.version, latestVersion: latest, note: p.note, sentAt: p.created_at, state,
     files: filesOf(db, p.id).map(({ fileNo, fileName, contentType }) => ({ fileNo, fileName, contentType })),
-    ...(jo ? { dueDate: jo.dueDate, lines: jo.lines } : {}),
+    ...(jo ? { dueDate: jo.dueDate, lines: (customerOrderView(db, jo.id)?.lines ?? []).map(({ description, qty, wearers }) => ({ description, qty, wearers })) } : {}),
     ...(jo && answer?.answer === 'approved' ? { order: customerOrderView(db, jo.id) } : {}),
     // The newest design's link, from an older one: whoever holds this link is who the newest is for.
     ...(jo && p.version < latest ? { latestToken: db.prepare('SELECT token FROM prf_proofs WHERE job_order_no = ? AND version = ?').pluck().get(p.job_order_no, latest) as string } : {}),

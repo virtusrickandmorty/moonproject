@@ -62,7 +62,12 @@ it('a team coach sees every player; the design link shows the order with its wea
   const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64').toString('base64');
   const proof = (await encoder.post(`/api/prf/job-orders/${jo.id}`, { files: [{ name: 'front.png', data: PNG }] })).json() as { token: string };
 
-  expect((await pub('GET', `/api/prf/p/${proof.token}`)).body.order).toBeUndefined(); // not before it is approved
+  const before = (await pub('GET', `/api/prf/p/${proof.token}`)).body;
+  expect(before.order).toBeUndefined(); // the status: not before it is approved
+  // The wearers: before approving too, to check with the design (the owner's request, Nov 2026).
+  expect(before.lines).toEqual([{ description: 'Team jersey set', qty: 2, wearers: [
+    { name: 'Made-up Cruz', measured: false, size: 'L', jerseyName: 'CRUZ', jerseyNumber: '7', qty: 1 }, { name: 'Made-up Reyes', measured: false, size: 'M', qty: 1 }] }]);
+  expect(JSON.stringify(before)).not.toMatch(/Cents|personId/);
   const approved = await pub('POST', `/api/prf/p/${proof.token}/answer`, { answer: 'approved', name: 'Made-up Coach' });
   expect(approved.status, JSON.stringify(approved.body)).toBe(200);
   expect(approved.body.order).toMatchObject({ number: jo.number, lines: [{ description: 'Team jersey set', qty: 2, wearers: [
