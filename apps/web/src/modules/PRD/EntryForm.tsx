@@ -285,8 +285,10 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                         .sort((a, b) => (r.rework ? +!sentBack.includes(a.rowNo) - +!sentBack.includes(b.rowNo) : 0));
                       const notYet = roster.length - listed.length;
                       const left = listed.filter((w) => !done.has(w.rowNo) && !elsewhere.has(w.rowNo));
+                      // A long wearer line wraps, so the size and pieces always show, and never widens the box past the card
+                      // (the owner's reports, Nov 2026: on a phone the box pushed the window sideways, and "…" hid the size).
                       return (
-                        <fieldset className="space-y-2 rounded-md bg-slate-50 p-3">
+                        <fieldset className="min-w-0 space-y-2 rounded-md bg-slate-50 p-3">
                           <legend className="sr-only">Wearers finished on row {i + 1}</legend>
                           <div className="flex flex-wrap items-center gap-2">
                             {r.rework ? <span className="rounded bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-900">Who needs rework{part ? ` · ${part} part` : ''}</span>
@@ -299,19 +301,19 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                             <span className="flex-1" />
                             {left.length > 0 && <Button onClick={() => tick(new Set([...mine, ...left.map((w) => w.rowNo)]))}>Tick all left ({left.length})</Button>}
                           </div>
-                          <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                          <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2 lg:grid-cols-3">
                             {listed.map((w) => {
                               const isDone = done.has(w.rowNo);
                               const otherRow = elsewhere.get(w.rowNo);
                               return (
-                                <li key={w.rowNo}>
+                                <li key={w.rowNo} className="min-w-0">
                                   <label className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${isDone || otherRow ? 'text-slate-400' : 'hover:bg-white'}`}>
                                     <input type="checkbox" aria-label={`Row ${i + 1} wearer ${w.wearerName}`} disabled={isDone || !!otherRow} checked={isDone || mine.has(w.rowNo)}
                                       onChange={(e) => { const next = new Set(mine); if (e.target.checked) next.add(w.rowNo); else next.delete(w.rowNo); tick(next); }} />
-                                    <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${part === 'lower' && w.lowerSize ? w.lowerSize : part === 'upper' ? w.size : sizeLabel(w.size, w.lowerSize)}` : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
+                                    <span className="min-w-0 flex-1 break-words">{w.wearerName}<span className="text-slate-500">{w.size ? <> · <span className={`font-semibold ${isDone || otherRow ? '' : 'text-slate-800'}`}>{part === 'lower' && w.lowerSize ? w.lowerSize : part === 'upper' ? w.size : sizeLabel(w.size, w.lowerSize)}</span></> : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
                                     {line?.isSet ? partsDone(w.rowNo).map((p) => <span key={p} className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">{p === 'upper' ? 'Upper' : 'Lower'} ✓</span>)
                                       : isDone && <span className="text-xs">done</span>}
-                                    {!isDone && partly[w.rowNo] && <span className="rounded bg-sky-100 px-1 text-xs text-sky-900">{partly[w.rowNo]} of {w.qty} done</span>}
+                                    {!isDone && partly[w.rowNo] && <span className="shrink-0 rounded bg-sky-100 px-1 text-xs text-sky-900">{partly[w.rowNo]} of {w.qty} done</span>}
                                     {r.rework && sentBack.includes(w.rowNo) && <span className="rounded bg-amber-100 px-1 text-xs text-amber-900">sent back</span>}
                                     {otherRow && <span className="text-xs">row {otherRow}</span>}
                                   </label>
