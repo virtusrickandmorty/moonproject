@@ -42,6 +42,14 @@ const ownBuild = () => (typeof document === 'undefined' ? null : /assets\/index-
 let updated = false;
 const updateListeners = new Set<() => void>();
 export const isAppUpdated = () => updated;
+/**
+ * A part of the app that would not load because this page is from before an update and the part is gone (the owner's
+ * report, Nov 2026: Download PSD failed). Each browser words it its own way. A build keeps earlier parts for a month
+ * (vite.config.ts), so this is rare; the words say what to do.
+ */
+export const stalePart = (e: unknown) => /dynamically imported module|importing a module script failed|failed to load module script|unable to preload/i.test(e instanceof Error ? e.message : String(e));
+export const STALE_PART = 'This page is from before an update of the ERP, so this step could not load. Download what you want to keep, then reload the page and try again.';
+
 /** True once the server serves a newer app than this page runs (an update while the page stayed open). */
 export function useAppUpdated(): boolean {
   const [on, setOn] = useState(updated);
