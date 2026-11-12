@@ -62,7 +62,45 @@ export function WearerRows({ wearers }: { wearers: CustomerOrder['lines'][number
   );
 }
 
-export function OrderStatus({ order, title = 'Your order' }: { order: CustomerOrder; title?: string }) {
+/**
+ * An item's wearers as a table, like the job ticket's (the owner's request, Nov 2026, for the design link): Wearer, Size,
+ * Jersey name, Jersey no., Qty (titled short: Jersey, No.). A jersey column no wearer of the item has is left out, so
+ * it fits a phone.
+ */
+export function WearerTable({ wearers }: { wearers: CustomerOrder['lines'][number]['wearers'] }) {
+  const names = wearers.some((w) => w.jerseyName), numbers = wearers.some((w) => w.jerseyNumber);
+  const th = 'px-1.5 py-1.5 text-left text-xs font-bold text-slate-500';
+  const td = 'px-1.5 py-1.5 align-top';
+  return (
+    <div className="-mx-1.5 mt-2 overflow-x-auto">
+      <table className="w-full border-collapse text-[13px] leading-snug">
+        <thead>
+          <tr className="border-b border-slate-200">
+            <th scope="col" className={th}>Wearer</th>
+            <th scope="col" className={th}>Size</th>
+            {names && <th scope="col" className={th}><abbr title="Jersey name" className="no-underline">Jersey</abbr></th>}
+            {numbers && <th scope="col" className={th}><abbr title="Jersey number" className="no-underline">No.</abbr></th>}
+            <th scope="col" className={`${th} text-right`}>Qty</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-200/70">
+          {wearers.map((w, j) => (
+            <tr key={j}>
+              <td className={`${td} font-semibold`}>{w.name}</td>
+              <td className={td}>{w.measured ? 'Custom fit' : w.size ?? ''}</td>
+              {names && <td className={`${td} uppercase`}>{w.jerseyName ?? ''}</td>}
+              {numbers && <td className={`${td} tabular-nums`}>{w.jerseyNumber ?? ''}</td>}
+              <td className={`${td} text-right tabular-nums`}>{w.qty}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** table: the wearers as a table like the job ticket's (the design link), else one per row. */
+export function OrderStatus({ order, title = 'Your order', table = false }: { order: CustomerOrder; title?: string; table?: boolean }) {
   const flow = STEPS.job_order;
   const at = flow.at[order.stage] ?? -1;
   return (
@@ -78,7 +116,7 @@ export function OrderStatus({ order, title = 'Your order' }: { order: CustomerOr
           <li key={i} className="rounded-2xl bg-slate-50 p-4">
             <p className="flex items-baseline justify-between gap-3"><span className="font-bold">{l.description}</span><span className="shrink-0 text-sm text-slate-500">{pcs(l.qty)}</span></p>
             {l.steps && l.steps.length > 0 && <ItemSteps steps={l.steps} />}
-            {l.wearers.length > 0 && <WearerRows wearers={l.wearers} />}
+            {l.wearers.length > 0 && (table ? <WearerTable wearers={l.wearers} /> : <WearerRows wearers={l.wearers} />)}
           </li>
         ))}
       </ul>

@@ -2,13 +2,13 @@
  * /p/<link>: the customer's design page (the owner's request, Nov 2026), without signing in. It shows the job order's design
  * (pictures, or a PDF to open), the shop's note, the items and the due date; the customer types their name and taps Approve,
  * or Ask for a change with what to change. Once answered it shows the answer; an older design points to the newest one.
- * Each item lists its wearers (name, size, jersey name and number: the owner's request, Nov 2026), to check with the
- * design. Once approved it leads to the order's status, with every wearer and their size.
+ * Each item lists its wearers in a table like the job ticket's (name, size, jersey name and number, qty: the owner's
+ * requests, Nov 2026), to check with the design. Once approved it leads to the order's status, with every wearer and their size.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import type { CustomerOrder } from '../../api.ts';
 import { SHOP_CONTACT } from '../../shop/products.ts';
-import { OrderStatus, WearerRows, pcs } from '../../shop/OrderStatus.tsx';
+import { OrderStatus, WearerTable, pcs } from '../../shop/OrderStatus.tsx';
 
 export interface PublicProof {
   jobOrderNumber: string; version: number; latestVersion: number; note: string | null; sentAt: string;
@@ -94,7 +94,7 @@ export function ProofPage({ token }: { token: string }) {
   return (
     <Frame title={`Design for ${proof.jobOrderNumber}`}>
       {proof.answer && <AnswerCard a={proof.answer} fresh={fresh} />}
-      {proof.order && <OrderStatus order={proof.order} />}
+      {proof.order && <OrderStatus order={proof.order} table />}
       {proof.state === 'replaced' && (
         <p className="rounded-2xl bg-sky-50 p-5 text-sky-900">The shop sent a newer design (version {proof.latestVersion}).{' '}
           {proof.latestToken && <a href={`/p/${proof.latestToken}`} className="font-bold underline">Open the newest design</a>}</p>)}
@@ -119,7 +119,7 @@ export function ProofPage({ token }: { token: string }) {
           <ul className="mt-2 space-y-3">{proof.lines.map((l, i) => (
             <li key={i} className="rounded-2xl bg-slate-50 p-4">
               <p className="flex items-baseline justify-between gap-3"><span className="font-bold">{l.description}</span><span className="shrink-0 text-sm text-slate-500">{pcs(l.qty)}</span></p>
-              {l.wearers.length > 0 && <WearerRows wearers={l.wearers} />}
+              {l.wearers.length > 0 && <WearerTable wearers={l.wearers} />}
             </li>))}</ul>
           {proof.dueDate && <p className="mt-2 text-sm text-slate-600">Due {day(proof.dueDate)}</p>}
         </div>}
