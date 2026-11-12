@@ -2,18 +2,19 @@
  * /p/<link>: the customer's design page (the owner's request, Nov 2026), without signing in. It shows the job order's design
  * (pictures, or a PDF to open), the shop's note, the items and the due date; the customer types their name and taps Approve,
  * or Ask for a change with what to change. Once answered it shows the answer; an older design points to the newest one.
- * Once approved it leads to the order's status, with every wearer and their size.
+ * Each item lists its wearers (name, size, jersey name and number: the owner's request, Nov 2026), to check with the
+ * design. Once approved it leads to the order's status, with every wearer and their size.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import type { CustomerOrder } from '../../api.ts';
 import { SHOP_CONTACT } from '../../shop/products.ts';
-import { OrderStatus } from '../../shop/OrderStatus.tsx';
+import { OrderStatus, WearerRows, pcs } from '../../shop/OrderStatus.tsx';
 
 export interface PublicProof {
   jobOrderNumber: string; version: number; latestVersion: number; note: string | null; sentAt: string;
   state: 'open' | 'answered' | 'replaced' | 'cancelled';
   files: { fileNo: number; fileName: string; contentType: string }[];
-  dueDate?: string; lines?: { description: string; qty: number }[]; latestToken?: string;
+  dueDate?: string; lines?: Pick<CustomerOrder['lines'][number], 'description' | 'qty' | 'wearers'>[]; latestToken?: string;
   answer: { answer: 'approved' | 'changes'; name: string; comment?: string; at: string } | null;
   order?: CustomerOrder | null; // once approved: where the order is, with its wearers
 }
@@ -115,7 +116,11 @@ export function ProofPage({ token }: { token: string }) {
         </div>
         {proof.lines && !proof.order && <div>
           <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Your order</h3>
-          <ul className="mt-2 divide-y divide-slate-100">{proof.lines.map((l, i) => <li key={i} className="flex justify-between gap-3 py-2"><span>{l.description}</span><span className="shrink-0 font-semibold tabular-nums">{l.qty} pcs</span></li>)}</ul>
+          <ul className="mt-2 space-y-3">{proof.lines.map((l, i) => (
+            <li key={i} className="rounded-2xl bg-slate-50 p-4">
+              <p className="flex items-baseline justify-between gap-3"><span className="font-bold">{l.description}</span><span className="shrink-0 text-sm text-slate-500">{pcs(l.qty)}</span></p>
+              {l.wearers.length > 0 && <WearerRows wearers={l.wearers} />}
+            </li>))}</ul>
           {proof.dueDate && <p className="mt-2 text-sm text-slate-600">Due {day(proof.dueDate)}</p>}
         </div>}
       </section>
@@ -123,7 +128,7 @@ export function ProofPage({ token }: { token: string }) {
       {proof.state === 'open' && (
         <section className="space-y-4 rounded-3xl bg-white p-5 ring-1 ring-slate-900/5 sm:p-6">
           <h2 className="text-lg font-extrabold">Is this design right?</h2>
-          <p className="text-sm text-slate-600">Check the names, numbers, spelling, colours and logo. Once you approve, we make it exactly like this.</p>
+          <p className="text-sm text-slate-600">Check the names, numbers, sizes, spelling, colours and logo. Once you approve, we make it exactly like this.</p>
           <label className="block text-sm font-semibold">Your name<input className={`${box} mt-1`} autoComplete="name" maxLength={120} value={name} onChange={(e) => setName(e.target.value)} /></label>
           {asking && <label className="block text-sm font-semibold">What should we change?
             <textarea className={`${box} mt-1 min-h-28`} maxLength={2000} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="For example: make the logo bigger, and the number 7 should read 17." /></label>}

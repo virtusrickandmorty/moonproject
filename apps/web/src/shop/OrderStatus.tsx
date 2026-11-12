@@ -41,6 +41,27 @@ function ItemSteps({ steps }: { steps: NonNullable<CustomerOrder['lines'][number
 export const sizeWords = (size: string | undefined, custom: boolean, qty: number) =>
   [custom ? 'Custom fit' : size ? `Size ${size}` : '', qty > 1 ? pcs(qty) : ''].filter(Boolean).join(' · ');
 
+/** An item's wearers, one per row: the jersey number and name (or the wearer's name), with the size on the right. */
+export function WearerRows({ wearers }: { wearers: CustomerOrder['lines'][number]['wearers'] }) {
+  return (
+    <ul className="mt-2 divide-y divide-slate-200/70">
+      {wearers.map((w, j) => {
+        const back = [w.jerseyNumber && `#${w.jerseyNumber}`, w.jerseyName].filter(Boolean).join(' ');
+        const sameName = !!w.jerseyName && w.jerseyName.trim().toUpperCase() === w.name.trim().toUpperCase();
+        return (
+          <li key={j} className="flex items-center justify-between gap-3 py-2">
+            <span className="min-w-0">
+              <span className={`block font-semibold ${back ? 'uppercase' : ''}`}>{back || w.name}</span>
+              {back && !sameName && <span className="block text-sm text-slate-500">{w.name}</span>}
+            </span>
+            <span className="shrink-0 rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">{sizeWords(w.size, w.measured, w.qty)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function OrderStatus({ order, title = 'Your order' }: { order: CustomerOrder; title?: string }) {
   const flow = STEPS.job_order;
   const at = flow.at[order.stage] ?? -1;
@@ -57,21 +78,7 @@ export function OrderStatus({ order, title = 'Your order' }: { order: CustomerOr
           <li key={i} className="rounded-2xl bg-slate-50 p-4">
             <p className="flex items-baseline justify-between gap-3"><span className="font-bold">{l.description}</span><span className="shrink-0 text-sm text-slate-500">{pcs(l.qty)}</span></p>
             {l.steps && l.steps.length > 0 && <ItemSteps steps={l.steps} />}
-            {l.wearers.length > 0 && <ul className="mt-2 divide-y divide-slate-200/70">
-              {l.wearers.map((w, j) => {
-                const back = [w.jerseyNumber && `#${w.jerseyNumber}`, w.jerseyName].filter(Boolean).join(' ');
-                const sameName = !!w.jerseyName && w.jerseyName.trim().toUpperCase() === w.name.trim().toUpperCase();
-                return (
-                  <li key={j} className="flex items-center justify-between gap-3 py-2">
-                    <span className="min-w-0">
-                      <span className={`block font-semibold ${back ? 'uppercase' : ''}`}>{back || w.name}</span>
-                      {back && !sameName && <span className="block text-sm text-slate-500">{w.name}</span>}
-                    </span>
-                    <span className="shrink-0 rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">{sizeWords(w.size, w.measured, w.qty)}</span>
-                  </li>
-                );
-              })}
-            </ul>}
+            {l.wearers.length > 0 && <WearerRows wearers={l.wearers} />}
           </li>
         ))}
       </ul>
