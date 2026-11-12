@@ -4,7 +4,7 @@
  * little longer each time, and every screen reloads once it is back. Signing out stops it for good.
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { RETRY_FIRST_MS, RETRY_MOST_MS, isAppUpdated, onLiveChange, startLive, stopLive } from './live.ts';
+import { RETRY_FIRST_MS, RETRY_MOST_MS, isAppUpdated, onLiveChange, stalePart, startLive, stopLive } from './live.ts';
 
 class FakeSource {
   static CONNECTING = 0; static OPEN = 1; static CLOSED = 2;
@@ -84,4 +84,10 @@ it('knows when the server serves a newer app than this page runs (a phone left o
   vi.advanceTimersByTime(RETRY_FIRST_MS);
   FakeSource.made[1]!.emit('hello', JSON.stringify({ seq: 9, build: 'assets/index-NEWBUILD.js' }));
   expect(isAppUpdated()).toBe(true);
+});
+
+it('knows a part of the app that would not load after an update, as each browser words it (Download PSD, Nov 2026)', () => {
+  for (const m of ['Failed to fetch dynamically imported module: https://x/assets/dist-old.js', 'error loading dynamically imported module: https://x/assets/a.js',
+    'Importing a module script failed.', 'Unable to preload CSS for /assets/a.css']) expect(stalePart(new Error(m)), m).toBe(true);
+  expect(stalePart(new Error('The vector could not be read.'))).toBe(false);
 });

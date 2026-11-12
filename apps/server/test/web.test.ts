@@ -46,10 +46,18 @@ describe('web app serving', () => {
   });
 
   it('answers any other GET outside /api with index.html, so deep links load the app', async () => {
-    for (const url of ['/jo/orders/123', '/docs/cash.trf/new?x=1', '/assets/gone.js', '/apiary']) {
+    for (const url of ['/jo/orders/123', '/docs/cash.trf/new?x=1', '/apiary', '/assetsx']) {
       const res = await get(url);
       expect(res.statusCode, url).toBe(200);
       expect(res.body, url).toBe(INDEX);
+    }
+  });
+
+  it('answers a missing built file with 404, not the app page (a page from before an update asking for an old part)', async () => {
+    for (const url of ['/assets/gone.js', '/assets/dist-old123.js']) {
+      const res = await get(url);
+      expect(res.statusCode, url).toBe(404);
+      expect(res.body, url).not.toBe(INDEX);
     }
   });
 

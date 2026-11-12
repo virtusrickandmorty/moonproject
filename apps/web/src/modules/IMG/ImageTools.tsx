@@ -17,6 +17,7 @@ import { api, type Me, type NavResult } from '../../api.ts';
 import { Button, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { removeColour, toHex, type Rgb } from './colour.ts';
 import { pictureToPsd, vectorToPsd, vectorToShapesPsd } from './psd.ts';
+import { STALE_PART, stalePart } from '../../live.ts';
 import { FIT, limit, zoomAt, type View } from './zoom.ts';
 
 type Tool = 'clean' | 'erase' | 'flat' | 'vector';
@@ -169,7 +170,7 @@ export function ImageTools({ me }: { me: Me }) {
 
   const attempt = async (work: () => Promise<void>) => {
     setError('');
-    try { await work(); } catch (e) { setError((e as Error).message); }
+    try { await work(); } catch (e) { setError(stalePart(e) ? STALE_PART : (e as Error).message); }
     setBusy('');
   };
 
