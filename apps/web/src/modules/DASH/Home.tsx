@@ -6,7 +6,7 @@ import { nightlyLine } from '../AUD/nightly.ts';
 import { Card, HomeCards, type IconName } from './Cards.tsx';
 import { TodayList } from './Today.tsx';
 import { AgingBars, Bars, CashLine } from './MoneyCharts.tsx';
-import { REPORT_QUIET_MS, useLiveChange, useLiveReload } from '../../live.ts';
+import { REPORT_QUIET_MS, toldRead, useLiveChange, useLiveReload, useReadElsewhere } from '../../live.ts';
 
 function Item({ item, action, muted = false, at }: { item: DashItem; action?: React.ReactNode; muted?: boolean; at?: string }) {
   const title = item.href ? <Link to={item.href} className="font-medium text-indigo-700 hover:underline">{item.label}</Link> : <span className="font-medium">{item.label}</span>;
@@ -56,12 +56,14 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
   }, (e: Error) => setError(e.message));
   useEffect(() => { void load(0); }, []);
   useLiveReload(() => load(0));
+  useReadElsewhere('dash', () => void load(0));
   const shown: AttentionItem[] | null = all ? rows : attentionItems(widgets, rows ?? []);
   async function markRead(id: string) {
     setBusy(id);
     try {
       await api.dashRead(id);
       setRows((prior) => prior?.map((n) => n.id === id ? { ...n, read: true } : n) ?? null);
+      toldRead('dash');
     } catch (e) { setError((e as Error).message); }
     setBusy('');
   }

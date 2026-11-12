@@ -44,3 +44,27 @@ test('an open report loads again by itself when something is recorded elsewhere,
   await a.close();
   await b.close();
 });
+
+/**
+ * Two tabs of one browser keep one bell (the owner's report, Nov 2026: a duplicated tab went quiet after its notifications
+ * were read, while the first tab kept ringing for them). A read mark is not a recorded change, so the tab that read them
+ * tells the others. The notifications here are made up for the test.
+ */
+test('notifications read in one tab are read in the other tab of the same browser too, without reloading', async ({ browser }) => {
+  const context = await browser.newContext();
+  let unread = [{ id: 'test:one', kind: 'test', label: 'A made-up notification', read: false, at: '2026-11-12T01:00:00.000Z' }];
+  await context.route('**/api/dash/notifications?*', (route) => route.fulfill({ json: unread }));
+  await context.route('**/api/dash/notifications/read', (route) => { unread = []; return route.fulfill({ json: { ok: true } }); });
+  // No live stream here: only what the tab that read them tells the other may update it (a change recorded meanwhile would too).
+  await context.route('**/api/live', (route) => route.abort());
+  const [first, second] = [await context.newPage(), await context.newPage()];
+  await signIn(first);
+  await second.goto('/');
+  for (const tab of [first, second]) await expect(tab.getByRole('button', { name: 'Notifications, 1 unread' })).toBeVisible();
+
+  await second.getByRole('button', { name: 'Notifications, 1 unread' }).click();
+  await second.getByRole('button', { name: 'Mark all as read' }).click();
+  await expect(second.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible();
+  await expect(first.getByRole('button', { name: 'Notifications', exact: true })).toBeVisible({ timeout: 5_000 });
+  await context.close();
+});
