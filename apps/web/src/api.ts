@@ -1353,7 +1353,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<DocCounts>('GET', doc(type, `/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
     /** `businessDate` only for a type that may be backdated, by someone allowed to (the payroll run's period end). */
-    preview: (type: string, input: unknown, businessDate?: string) => call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}) }),
+    /** replacesId: the preview of an edit, checked as if the record it replaces were cancelled, as Record does. */
+    preview: (type: string, input: unknown, businessDate?: string, replacesId?: string) =>
+      call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}), ...(replacesId ? { replacesId } : {}) }),
     post: (type: string, input: unknown, expectedTotalCents: number, key: string, businessDate?: string) =>
       call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents, ...(businessDate ? { businessDate } : {}) }, idem(key)),
     cancelPreview: (type: string, id: string) => call<CancelPreview>('GET', one(type, id, '/cancel-preview')),

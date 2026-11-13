@@ -118,10 +118,10 @@ export interface PreviewResult {
   journal: { accountCode: string; accountName: string; partyType: string | null; partyId: string | null; debitCents: number; creditCents: number }[] | null;
 }
 
-export function previewDocument(env: EngineEnv, def: DocTypeDef, actor: Actor, rawInput: unknown, businessDate?: string): PreviewResult {
+export function previewDocument(env: EngineEnv, def: DocTypeDef, actor: Actor, rawInput: unknown, businessDate?: string, replacesId?: string): PreviewResult {
   need(actor, def.permissions.create);
   const input = parseInput(def, rawInput);
-  const ctx = context(env, actor, resolveBusinessDate(def, actor, env, businessDate));
+  const ctx = context(env, actor, resolveBusinessDate(def, actor, env, businessDate), replacesId);
   const doc = def.compute(input, ctx);
   const issues = [...def.validate(doc, ctx), ...noticesOf(env, { docType: def.key, action: 'post', businessDate: ctx.businessDate, posts: !!def.journal, doc }), ...oldDateNotice(env, ctx.businessDate)];
   let journal: PreviewResult['journal'] = null;
@@ -156,6 +156,29 @@ export interface PostRequest {
   /** What the user saw in the confirm dialog; if the server's total differs, nothing is recorded. */
   expectedTotalCents: number;
   businessDate?: string;
+}
+
+/**
+ * The preview of an edit (reissue): the new version checked as Record would post it, with the document it replaces
+ * cancelled first, as reissueDocument does. That cancel is rolled back, so nothing is written (the owner's report,
+ * Nov 2026: editing a production entry said its own pieces were already recorded, "so at most 0 more").
+ */
+export function previewReissue(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string, rawInput: unknown, businessDate?: string): PreviewResult {
+  need(actor, def.permissions.cancel);
+  need(actor, def.permissions.post);
+  if (env.db.inTransaction) throw new Error('previewReissue rolls back its own transaction; call it outside one.');
+  const undo = new Error('preview only');
+  let result: PreviewResult | undefined;
+  try {
+    env.db.transaction(() => {
+      cancelInTx(env, def, actor, id, 'Preview of an edit', true);
+      result = previewDocument(env, def, actor, rawInput, businessDate, id);
+      throw undo;
+    }).immediate();
+  } catch (e) {
+    if (e !== undo) throw e;
+  }
+  return result!;
 }
 
 /** Posts inside the caller's transaction (used by post and reissue). */
