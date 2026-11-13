@@ -5,6 +5,8 @@
  */
 import { beforeEach, expect, it } from 'vitest';
 import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { today } from '../../../platform/clock.ts';
+import { addDays } from '../../PAY/run-calc.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { seedEmployees } from './emp-fixture.ts';
 
@@ -14,7 +16,7 @@ let w: ReturnType<typeof seedEmployees>;
 let jo: string;
 const SEWING = 6, PACKING = 8;
 const PE = '/api/docs/prd.entry';
-const yesterday = () => new Date(Date.parse(env.clock.now().toISOString()) + 8 * 3600_000 - 86_400_000).toISOString().slice(0, 10); // Manila
+const yesterday = () => addDays(today(env.clock), -1);
 const codes = (issues: { code: string; level: string }[]) => issues.filter((i) => i.level === 'error').map((i) => i.code);
 
 beforeEach(async () => {
