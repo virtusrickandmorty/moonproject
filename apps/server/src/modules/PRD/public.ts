@@ -144,6 +144,23 @@ export function unpaidAssignments(db: Db, upTo: string, employeeId?: string): Un
     .all({ upTo, e: employeeId ?? null }) as UnpaidAssignment[];
 }
 
+/**
+ * Rows of these workers done after a day and not paid yet: a payroll's work after its cut-off, paid on a later payroll
+ * (the owner's request, Nov 2026: the run screen shows them). Read only.
+ */
+export function unpaidAfter(db: Db, after: string, employeeIds: string[]): UnpaidAssignment[] {
+  if (employeeIds.length === 0) return [];
+  return db
+    .prepare(
+      `SELECT a.id, a.document_id AS documentId, a.job_order_id AS jobOrderId, a.line_no AS lineNo, a.step_id AS stepId, a.employee_id AS employeeId,
+         a.work_date AS workDate, a.kind, a.pieces, a.rate_cents AS rateCents, a.amount_cents AS amountCents
+       FROM prd_assignments a JOIN documents d ON d.id = a.document_id
+       WHERE d.status = 'posted' AND a.pay_run_line_id IS NULL AND a.work_date > ? AND a.employee_id IN (SELECT value FROM json_each(?))
+       ORDER BY a.employee_id, a.work_date, d.number, a.row_no`,
+    )
+    .all(after, JSON.stringify(employeeIds)) as UnpaidAssignment[];
+}
+
 /** Rows recorded as a different sheet despite matching an earlier one (B2-F3), with the reason typed; PAY lists them. */
 export function repeatedAssignments(db: Db, assignmentIds: string[]): { id: string; reason: string }[] {
   if (assignmentIds.length === 0) return [];

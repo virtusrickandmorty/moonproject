@@ -15,6 +15,7 @@ import { addDays, periodEndOf, periodRuleOf } from './run-calc.ts';
 import { listLoans, registerLoan, stopLoan, updateLoan, withTotals } from './loans.ts';
 import { annualTableAt, hdmfRateAt, payRulesAt, phicRateAt, sssRateAt, wtaxTableAt } from './statutory.ts';
 import { addPrior, updatePrior } from './prior.ts';
+import { afterCutoff } from './after-cutoff.ts';
 import { ownPayslips } from './own.ts';
 import { payHistory } from './history.ts';
 import { data2316, employeesPaidIn, priorRows } from './year-end.ts';
@@ -138,6 +139,14 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
         ...(periodEnd > now ? { notEnded: true } : {}),
       };
     });
+  });
+
+  /** Piece work after a period's last day, not paid yet: the run screen shows what the payroll leaves for the next one. */
+  app.get('/api/pay/after-cutoff', { config: { permission: 'pay.run.create' } }, async (req) => {
+    const { payGroup, periodStart } = z.object({ payGroup: z.enum(PAY_GROUPS), periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict().parse(req.query);
+    const periodEnd = periodEndOf(payGroup, periodStart, periodRuleOf(db));
+    if (!periodEnd) throw badRequest('NOT_A_PERIOD', `${periodStart} does not start a payroll period.`);
+    return { periodEnd, employees: afterCutoff(db, payGroup, periodStart, periodEnd) };
   });
 
   /** The 13th-month pay form's years (this year, and last year early in January) and what each group has recorded. */
