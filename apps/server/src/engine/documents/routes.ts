@@ -11,7 +11,7 @@ import type { AppDeps } from '../../app.ts';
 import { currentUser } from '../security/routes.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../idempotency.ts';
 import { journalsForSource } from '../ledger/queries.ts';
-import { cancelDocument, engineEnv, postDocument, previewCancel, previewDocument, reissueDocument, type Actor } from './lifecycle.ts';
+import { cancelDocument, engineEnv, postDocument, previewCancel, previewDocument, previewReissue, reissueDocument, type Actor } from './lifecycle.ts';
 import type { DocTypeDef } from './registry.ts';
 
 const auth = { config: { permission: 'authenticated' } };
@@ -19,7 +19,8 @@ const auth = { config: { permission: 'authenticated' } };
 const postBody = z.object({ input: z.unknown(), expectedTotalCents: z.number().int(), businessDate: z.string().optional() }).strict();
 const cancelBody = z.object({ reason: z.string() }).strict();
 const reissueBody = postBody.extend({ reason: z.string() }).strict();
-const previewBody = z.object({ input: z.unknown(), businessDate: z.string().optional() }).strict();
+// replacesId: the preview of an edit, checked as if the document it replaces were cancelled (previewReissue).
+const previewBody = z.object({ input: z.unknown(), businessDate: z.string().optional(), replacesId: z.string().min(1).optional() }).strict();
 
 function parse<T>(schema: z.ZodType<T>, v: unknown): T {
   const r = schema.safeParse(v);
@@ -143,7 +144,7 @@ export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
     const d = typeOf(req.params.type);
     const b = parse(previewBody, req.body);
     const actor = actorOf(req);
-    const r = previewDocument(env, d, actor, b.input, b.businessDate);
+    const r = b.replacesId ? previewReissue(env, d, actor, b.replacesId, b.input, b.businessDate) : previewDocument(env, d, actor, b.input, b.businessDate);
     const doc = d.forViewer ? d.forViewer(db, r.doc, (p: string) => actor.permissions.has(p)) : r.doc;
     return { ...r, doc, journal: actor.permissions.has('acc.journal.view') ? r.journal : undefined };
   });

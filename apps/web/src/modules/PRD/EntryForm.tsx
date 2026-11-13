@@ -148,16 +148,18 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
   const overWearer = rows.flatMap((r, i) => { const w = soloOf(r); return w && Number(r.pieces) > w.left ? [`Row ${i + 1}: ${w.name} has ${w.left} ${w.left === 1 ? 'piece' : 'pieces'} left on this step.`] : []; });
   const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors, ...overReady, ...overWearer];
   const input = { jobOrderId: jo, stepId: stepId ?? 0, workDate, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
-  // On Edit the entry being replaced is still recorded until Record cancels it: a row matching only that entry is no repeat.
+  // On Edit the server checks the new version with the entry it replaces cancelled, as Record does (api.preview's
+  // replacesId); a row matching only that entry is no repeat, kept here too.
   const own = (p: Preview): Preview => (original ? { ...p, issues: p.issues.filter((i) => !(i.code === 'LIKELY_REPEAT' && i.message.includes(`: ${original.number} already has`)) && !(i.code === 'WEARER_DONE' && i.message.includes(`(${original.number})`))
     && !(i.code === 'WEARER_PIECES_LEFT' && i.message.includes(original.number))) } : p);
-  const preview = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  const previewOf = () => (original ? api.preview(type.key, input, undefined, original.id) : api.preview(type.key, input));
+  const preview = useLive(JSON.stringify(input), errors.length === 0, () => previewOf());
   const live = preview && own(preview);
   const repeatAt = new Set([...refusedRepeat, ...(live?.issues ?? []).filter((i) => i.code === 'LIKELY_REPEAT').map((i) => Number(i.field?.split('.')[1]))]);
 
   const openConfirm = () => {
     setTouched(true);
-    if (errors.length === 0) api.preview(type.key, input).then((p) => setConfirm(own(p)), fail);
+    if (errors.length === 0) previewOf().then((p) => setConfirm(own(p)), fail);
   };
   const record = async (key: string) => {
     try {
@@ -165,7 +167,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
       if (fixed) { setConfirm(null); fixed.onRecorded(); return; }
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(own(await api.preview(type.key, input)));
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(own(await previewOf()));
       if (e instanceof ApiError && Array.isArray(e.details)) setRefusedRepeat((e.details as Issue[]).filter((i) => i.code === 'LIKELY_REPEAT').map((i) => Number(i.field?.split('.')[1])));
       throw e;
     }
