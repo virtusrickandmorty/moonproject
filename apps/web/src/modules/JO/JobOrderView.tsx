@@ -226,7 +226,20 @@ function ToJobOrder({ d }: { d: DocDetail }) {
 }
 /** A recorded release is corrected by cancelling it and releasing again (its pieces and invoice depend on it). */
 export const releaseView: ViewParts = { noEdit: true, extra: (d) => <><ToJobOrder d={d} /><ReleaseReceived d={d} /></> };
-export const invoiceRecordView: ViewParts = { extra: (d) => <ToJobOrder d={d} /> };
+/**
+ * A cancelled invoice record, its paper invoice still standing (cancelled by mistake): the way to record it again with the
+ * same number, for someone who may cancel invoices; or the record that already did (the owner's request, Nov 2026).
+ */
+function RecordAgain({ d }: { d: DocDetail }) {
+  const doc = d.doc as { againBy?: { id: string; number: string }; againOf?: string; againOfNumber?: string } | undefined;
+  const [can, setCan] = useState(false);
+  useEffect(() => void api.docTypes().then((ts) => setCan(!!ts.find((t) => t.key === 'jo.invoice_record')?.canCancel), () => undefined), []);
+  if (doc?.againOf) return <Link to={docPath('jo.invoice_record', `/${doc.againOf}`)} className={action}>Records {doc.againOfNumber} again</Link>;
+  if (d.header.status !== 'cancelled' || d.header.replacedById) return null;
+  if (doc?.againBy) return <Link to={docPath('jo.invoice_record', `/${doc.againBy.id}`)} className={action}>Recorded again as {doc.againBy.number}</Link>;
+  return can ? <Link to={`/docs/jo.invoice_record/new?again=${encodeURIComponent(d.header.id)}`} className={action}>Cancelled by mistake? Record it again</Link> : null;
+}
+export const invoiceRecordView: ViewParts = { extra: (d) => <><ToJobOrder d={d} /><RecordAgain d={d} /></> };
 
 /** After a downpayment invoice (mode C) comes its collection: the way on to the payment form for the same job order. */
 function DpNext({ d }: { d: DocDetail }) {

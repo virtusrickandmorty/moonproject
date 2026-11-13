@@ -15,6 +15,9 @@
  * One invoice for several releases (the owner's request, Nov 2026): `alsoReleaseIds` are earlier releases of the same job
  * order with no invoice yet, written on the same booklet invoice; the sale is all of their lines (jo_invoice_record_releases,
  * read through the jo_invoice_covers view).
+ * Recorded again (the owner's request, Nov 2026): an invoice record cancelled by mistake, its paper invoice still standing,
+ * is recorded again with `againOf`: the same booklet number and the same releases, with a note saying why. Only someone who
+ * may cancel invoice records does it. The paper invoice is still used once; the cancelled record and the new one share it.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -46,6 +49,8 @@ export const invoiceRecordInput = z
     // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7).
     invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
     note: z.string().trim().min(1).max(500).optional(),
+    // The cancelled invoice record this one records again, with its booklet number (cancelled by mistake).
+    againOf: z.uuid().optional(),
   })
   .strict();
 export type InvoiceRecordInput = z.infer<typeof invoiceRecordInput>;
@@ -94,6 +99,10 @@ export function invoiceFigures(db: Db, jobOrderId: string, lines: readonly Relea
 }
 
 export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof invoiceFigures> {
+  /** The cancelled record this one records again, by number. */
+  againOfNumber?: string;
+  /** On a cancelled record: the record that recorded it again, if any. */
+  againBy?: { id: string; number: string };
   releaseNumber: string;
   /** Every release on the invoice, by number: its own and the others (one when it covers only its own). */
   releaseNumbers: string[];
@@ -115,24 +124,39 @@ export const invoiceCovering = (db: Db, releaseId: string) =>
     JOIN documents d ON d.id = c.document_id WHERE c.release_id = ? AND d.status = 'posted' ORDER BY d.number LIMIT 1`)
     .get(releaseId) as { id: string; number: string; invoiceNumber: string } | undefined;
 
+/** An invoice record to record again: its number, status, booklet number, releases, and the record that already did, if any. */
+export function cancelledRecord(db: Db, id: string) {
+  const r = db.prepare(`SELECT d.number, d.status, d.doc_type AS docType, i.invoice_number AS invoiceNumber, i.release_id AS releaseId,
+      (SELECT n.number FROM jo_invoice_records a JOIN documents n ON n.id = a.document_id WHERE a.again_of = d.id) AS againBy
+    FROM documents d JOIN jo_invoice_records i ON i.document_id = d.id WHERE d.id = ?`).get(id) as
+    { number: string; status: string; docType: string; invoiceNumber: string; releaseId: string; againBy: string | null } | undefined;
+  if (!r) return undefined;
+  const also = db.prepare('SELECT release_id FROM jo_invoice_record_releases WHERE document_id = ?').pluck().all(id) as string[];
+  return { ...r, releaseIds: [r.releaseId, ...also] };
+}
+
 /** The lines of several releases, in the order given; a release that is not found adds none. */
 export const linesOfReleases = (db: Db, ids: readonly string[]): ReleaseLine[] =>
   ids.flatMap((id) => (releaseHeader(db, id) ? releaseDoc.load(db, id).lines : []));
 
 /** The document that used a booklet invoice number, cancelled ones included. Releases, quick sales and asset sales (FA) share one booklet. */
-export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { number: string; status: string } | undefined {
+export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { id?: string; number: string; status: string } | undefined {
   const own = db
-    .prepare(`SELECT d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE CAST(i.invoice_number AS INTEGER) = CAST(? AS INTEGER)`)
-    .get(invoiceNumber) as { number: string; status: string } | undefined;
+    .prepare(`SELECT d.id, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE CAST(i.invoice_number AS INTEGER) = CAST(? AS INTEGER)
+              ORDER BY d.status = 'posted' DESC, d.posted_at DESC LIMIT 1`)
+    .get(invoiceNumber) as { id: string; number: string; status: string } | undefined;
   return own ?? dpInvoiceUsedBy(db, invoiceNumber) ?? saleByInvoiceNumber(db, invoiceNumber) ?? assetSaleByInvoiceNumber(db, invoiceNumber);
 }
 
 /** Booklet invoice numbers used between two numbers by invoice records, quick sales and asset sales, cancelled ones included (TAX). */
 export function invoiceNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
-  const own = db
+  const rows = db
     .prepare(`SELECT CAST(i.invoice_number AS INTEGER) AS n, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id
-              WHERE CAST(i.invoice_number AS INTEGER) BETWEEN ? AND ?`)
+              WHERE CAST(i.invoice_number AS INTEGER) BETWEEN ? AND ? ORDER BY d.status = 'posted' DESC, d.posted_at DESC`)
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
+  // A number recorded again counts once: as its recorded record, or its latest cancelled one.
+  const seen = new Set<number>();
+  const own = rows.filter((r) => !seen.has(r.n) && !!seen.add(r.n));
   return [...own, ...dpInvoiceNumbersBetween(db, from, to), ...saleInvoiceNumbersBetween(db, from, to), ...assetSaleInvoiceNumbersBetween(db, from, to)].sort((a, b) => a.n - b.n);
 }
 
@@ -155,6 +179,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     return {
       ...input,
       ...figures,
+      ...(input.againOf ? { againOfNumber: cancelledRecord(ctx.db, input.againOf)?.number ?? '?' } : {}),
       releaseNumber: header?.number ?? '?',
       releaseNumbers: [...also.map((id) => releaseHeader(ctx.db, id)?.number ?? '?'), header?.number ?? '?'].sort(),
       jobOrderId: rel?.jobOrderId ?? '',
@@ -189,8 +214,22 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
         if (has) error('alsoReleaseIds', 'ALREADY_INVOICED', `${a.number} already has invoice no. ${has.invoiceNumber} (${has.number}).`);
       }
     }
+    const again = doc.againOf ? cancelledRecord(ctx.db, doc.againOf) : undefined;
+    if (doc.againOf) {
+      const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+      if (!again) error('againOf', 'AGAIN_NOT_FOUND', 'The cancelled invoice record to record again was not found.');
+      else if (again.status !== 'cancelled') error('againOf', 'AGAIN_NOT_CANCELLED', `${again.number} is not cancelled, so there is nothing to record again.`);
+      else if (again.againBy) error('againOf', 'AGAIN_DONE', `${again.number} was already recorded again as ${again.againBy}.`);
+      else {
+        if (Number(again.invoiceNumber) !== Number(doc.invoiceNumber)) error('invoiceNumber', 'AGAIN_NUMBER', `Recording ${again.number} again keeps its invoice no. ${again.invoiceNumber}.`);
+        if (!same(again.releaseIds, [doc.releaseId, ...(doc.alsoReleaseIds ?? [])])) error('releaseId', 'AGAIN_RELEASES', `Recording ${again.number} again keeps the releases it was for. To invoice other releases, write a new invoice.`);
+      }
+      if (!doc.note) error('note', 'AGAIN_NOTE', 'Say why the invoice is recorded again, like "cancelled by mistake".');
+      if (!ctx.can('jo.invoice_cancel')) error('againOf', 'AGAIN_PERMISSION', 'Only someone who may cancel invoice records can record one again.');
+    }
     const used = invoiceNumberUsedBy(ctx.db, doc.invoiceNumber);
-    if (used) {
+    const restoring = !!again && again.status === 'cancelled' && !again.againBy && used?.id === doc.againOf;
+    if (used && !restoring) {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
       error('invoiceNumber', 'INVOICE_USED', `Invoice no. ${doc.invoiceNumber} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
     }
@@ -205,12 +244,12 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   persist(db, doc, h) {
     db.prepare(
       `INSERT INTO jo_invoice_records (document_id, release_id, job_order_id, customer_id, customer_name, invoice_number, vat_rate_bp, deposit_vat_mode,
-         list_cents, discount_cents, gross_cents, vat_cents, discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, deposit_applied_cents, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         list_cents, discount_cents, gross_cents, vat_cents, discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, deposit_applied_cents, note, again_of)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       h.documentId, doc.releaseId, doc.jobOrderId, doc.customerId, doc.customerName, doc.invoiceNumber, doc.vatRateBp, doc.depositVatMode,
       doc.listCents, doc.discountCents, doc.grossCents, doc.vatCents, doc.discountNetCents,
-      doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.depositAppliedCents + doc.dpAppliedCents, doc.note ?? null,
+      doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.depositAppliedCents + doc.dpAppliedCents, doc.note ?? null, doc.againOf ?? null,
     );
     const also = db.prepare('INSERT INTO jo_invoice_record_releases (document_id, release_id) VALUES (?, ?)');
     for (const id of doc.alsoReleaseIds ?? []) also.run(h.documentId, id);
@@ -264,12 +303,14 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
         `SELECT release_id AS releaseId, invoice_number AS invoiceNumber, note, vat_rate_bp AS vatRateBp, list_cents AS listCents, discount_cents AS discountCents,
            gross_cents AS grossCents, vat_cents AS vatCents, discount_net_cents AS discountNetCents, sales_mto_cents AS mto, sales_rtw_cents AS rtw,
            sales_service_cents AS service, deposit_applied_cents AS depositAppliedCents, job_order_id AS jobOrderId, customer_id AS customerId,
-           customer_name AS customerName, deposit_vat_mode AS depositVatMode
+           customer_name AS customerName, deposit_vat_mode AS depositVatMode, again_of AS againOf
          FROM jo_invoice_records WHERE document_id = ?`,
       )
-      .get(documentId) as (Omit<InvoiceRecord, 'note'> & { note: string | null; mto: number; rtw: number; service: number }) | undefined;
+      .get(documentId) as (Omit<InvoiceRecord, 'note' | 'againOf'> & { note: string | null; againOf: string | null; mto: number; rtw: number; service: number }) | undefined;
     if (!r) throw new Error(`Invoice record ${documentId} not found`);
-    const { note, mto, rtw, service, ...rest } = r;
+    const { note, againOf, mto, rtw, service, ...rest } = r;
+    const againBy = db.prepare('SELECT d.id, d.number FROM jo_invoice_records a JOIN documents d ON d.id = a.document_id WHERE a.again_of = ?')
+      .get(documentId) as { id: string; number: string } | undefined;
     const rel = releaseDoc.load(db, r.releaseId);
     const also = db.prepare(`SELECT x.release_id FROM jo_invoice_record_releases x JOIN documents d ON d.id = x.release_id WHERE x.document_id = ? ORDER BY d.number`)
       .pluck().all(documentId) as string[];
@@ -282,6 +323,8 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     return {
       ...rest,
       ...(note ? { note } : {}),
+      ...(againOf ? { againOf, againOfNumber: cancelledRecord(db, againOf)?.number ?? '?' } : {}),
+      ...(againBy ? { againBy } : {}),
       ...(also.length ? { alsoReleaseIds: also } : {}),
       depositAppliedCents: r.depositAppliedCents - dpAppliedCents,
       depositVatCents: 0 - (row?.depositVatCents ?? 0),
@@ -310,11 +353,12 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     const left = doc.depositAppliedCents > 0 || doc.dpAppliedCents > 0 ? `${applied} ${formatPeso(doc.grossCents - doc.depositAppliedCents - doc.dpAppliedCents)} is left to collect.` : '';
     const vatOnDeposits = doc.depositVatCents > 0 ? ` ${formatPeso(doc.depositVatCents)} of it was already booked as output VAT on the deposits (mode B).` : '';
     const sale = `${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount})`;
+    const again = doc.againOfNumber ? ` It records ${doc.againOfNumber} again, cancelled by mistake.` : '';
     if (doc.dpAppliedCents > 0) {
       const b = doc.booklet;
-      return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${releases} of ${doc.jobOrderNumber}: a sale of ${sale}, less ${formatPeso(doc.dpAppliedCents)} of downpayments already invoiced (mode C), so the invoice shows ${formatPeso(b.grossCents)} (VATable sales ${formatPeso(b.vatableSalesCents)}, VAT ${formatPeso(b.vatCents)}).${left}`;
+      return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${releases} of ${doc.jobOrderNumber}: a sale of ${sale}, less ${formatPeso(doc.dpAppliedCents)} of downpayments already invoiced (mode C), so the invoice shows ${formatPeso(b.grossCents)} (VATable sales ${formatPeso(b.vatableSalesCents)}, VAT ${formatPeso(b.vatCents)}).${left}${again}`;
     }
-    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${releases} of ${doc.jobOrderNumber}: ${sale}.${vatOnDeposits}${left}`;
+    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${releases} of ${doc.jobOrderNumber}: ${sale}.${vatOnDeposits}${left}${again}`;
   },
 
   arbitrary(db) {
