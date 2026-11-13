@@ -84,8 +84,8 @@ export function AlsoOnInvoice({ list, ticked, onChange }: { list: Uninvoiced[]; 
   if (!list.length) return null;
   return (
     <fieldset className="space-y-1 rounded-md bg-amber-50 p-3 ring-1 ring-amber-200">
-      <legend className="sr-only">Earlier releases on this invoice too</legend>
-      <p className="text-sm font-medium">Released before with no invoice yet: put on this invoice too</p>
+      <legend className="sr-only">Other releases on this invoice too</legend>
+      <p className="text-sm font-medium">Other releases of this job order with no invoice yet: tick to put them on this invoice too</p>
       {list.map((r) => (
         <label key={r.id} className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={ticked.includes(r.id)} onChange={(e) => onChange(e.target.checked ? [...ticked, r.id] : ticked.filter((x) => x !== r.id))} />
