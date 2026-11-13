@@ -4,8 +4,9 @@
  */
 import { cents } from '../COL/money.ts';
 
-export interface RepaymentValues { employeeId: string; cashPlaceId: string; amount: string; reference: string; note: string }
-export const emptyRepayment = (employeeId = ''): RepaymentValues => ({ employeeId, cashPlaceId: '', amount: '', reference: '', note: '' });
+/** advanceId: the open cash advance it pays (the owner's request, Nov 2026); '' for none in particular. */
+export interface RepaymentValues { employeeId: string; cashPlaceId: string; amount: string; reference: string; note: string; advanceId: string }
+export const emptyRepayment = (employeeId = ''): RepaymentValues => ({ employeeId, cashPlaceId: '', amount: '', reference: '', note: '', advanceId: '' });
 
 export function repaymentInput(v: RepaymentValues) {
   const amount = cents(v.amount);
@@ -17,6 +18,7 @@ export function repaymentInput(v: RepaymentValues) {
   const input = {
     employeeId: v.employeeId, cashPlaceId: Number(v.cashPlaceId), amountCents: amount ?? 0,
     ...(v.reference.trim() ? { reference: v.reference.trim() } : {}), ...(v.note.trim() ? { note: v.note.trim() } : {}),
+    ...(v.advanceId ? { advanceId: v.advanceId } : {}),
   };
   return { input, errors };
 }

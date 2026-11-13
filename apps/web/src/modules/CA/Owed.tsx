@@ -85,7 +85,7 @@ export function CaEmployeePage({ me, docTypes, params }: { me: Me; docTypes: Doc
                 <tr key={x.documentId} className="border-t border-slate-100">
                   <td className="py-1">{showDate(x.businessDate)}</td>
                   <td><Link to={docPath(`ca.${x.kind}`, `/${x.documentId}`)} className="underline">{x.number}</Link></td>
-                  <td>{KIND[x.kind]}</td>
+                  <td>{KIND[x.kind]}{x.advanceNumber && <span className="text-slate-500"> · for {x.advanceNumber}</span>}</td>
                   <td className="text-right tabular-nums">{peso(x.amountCents)}</td><td className="text-right tabular-nums">{peso(x.balanceAfterCents)}</td>
                 </tr>
               ))}

@@ -47,20 +47,26 @@ export function owing(db: Db): { employeeId: string; name: string; owedCents: nu
 }
 
 export interface OpenAdvance { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }
-/** A recorded repayment (CAR-) or write-off (CAW-) and what the employee owed right after it, in ledger order. */
-export interface Settlement { documentId: string; number: string; kind: 'repayment' | 'writeoff'; businessDate: string; amountCents: number; balanceAfterCents: number }
+/**
+ * A recorded repayment (CAR-) or write-off (CAW-) and what the employee owed right after it, in ledger order; a
+ * repayment applied to one advance names it.
+ */
+export interface Settlement {
+  documentId: string; number: string; kind: 'repayment' | 'writeoff'; businessDate: string; amountCents: number; balanceAfterCents: number; advanceNumber?: string;
+}
 
 /** Repayments and write-offs still recorded (up to asOf), oldest first, each with the 1210 balance after its journal. */
 function settlements(db: Db, employeeId: string, asOf?: string): Settlement[] {
   const recorded = db
     .prepare(
-      `SELECT d.id AS documentId, d.number, 'repayment' AS kind, d.business_date AS businessDate, r.amount_cents AS amountCents
-       FROM ca_repayments r JOIN documents d ON d.id = r.document_id WHERE r.employee_id = @e AND d.status = 'posted' AND (@asOf IS NULL OR d.business_date <= @asOf)
+      `SELECT d.id AS documentId, d.number, 'repayment' AS kind, d.business_date AS businessDate, r.amount_cents AS amountCents, a.number AS advanceNumber
+       FROM ca_repayments r JOIN documents d ON d.id = r.document_id LEFT JOIN documents a ON a.id = r.advance_id
+       WHERE r.employee_id = @e AND d.status = 'posted' AND (@asOf IS NULL OR d.business_date <= @asOf)
        UNION ALL
-       SELECT d.id, d.number, 'writeoff', d.business_date, w.amount_cents
+       SELECT d.id, d.number, 'writeoff', d.business_date, w.amount_cents, NULL
        FROM ca_writeoffs w JOIN documents d ON d.id = w.document_id WHERE w.employee_id = @e AND d.status = 'posted' AND (@asOf IS NULL OR d.business_date <= @asOf)`,
     )
-    .all({ e: employeeId, asOf: asOf ?? null }) as Omit<Settlement, 'balanceAfterCents'>[];
+    .all({ e: employeeId, asOf: asOf ?? null }) as (Omit<Settlement, 'balanceAfterCents' | 'advanceNumber'> & { advanceNumber: string | null })[];
   if (!recorded.length) return [];
   const byId = new Map(recorded.map((s) => [s.documentId, s]));
   const ledger = db
@@ -75,9 +81,19 @@ function settlements(db: Db, employeeId: string, asOf?: string): Settlement[] {
   for (const l of ledger) {
     balance += l.net;
     const s = l.original ? byId.get(l.sourceId) : undefined;
-    if (s) out.push({ ...s, balanceAfterCents: balance });
+    if (s) { const { advanceNumber, ...rest } = s; out.push({ ...rest, balanceAfterCents: balance, ...(advanceNumber ? { advanceNumber } : {}) }); }
   }
   return out;
+}
+
+/** Recorded repayments applied to an advance (up to asOf): it cannot be cancelled before them, and they pay it. */
+export function appliedRepayments(db: Db, advanceId: string, asOf?: string): { id: string; number: string; amountCents: number }[] {
+  return db
+    .prepare(
+      `SELECT d.id, d.number, r.amount_cents AS amountCents FROM ca_repayments r JOIN documents d ON d.id = r.document_id
+       WHERE r.advance_id = @a AND d.status = 'posted' AND (@asOf IS NULL OR d.business_date <= @asOf) ORDER BY d.posted_at`,
+    )
+    .all({ a: advanceId, asOf: asOf ?? null }) as { id: string; number: string; amountCents: number }[];
 }
 
 /**
@@ -103,7 +119,12 @@ export function advanceSchedule(
   let left = outstanding;
   for (const a of advances) {
     if (left <= 0) break;
-    const openCents = Math.min(a.amountCents, left);
+    // A repayment applied to this advance pays it (the owner's request, Nov 2026): paid in full, it is no longer
+    // deducted. The rest of the balance stays on the other advances, newest first. A repayment dated after a payroll
+    // made later counts too, as it does in what is owed (owedFrom: the lowest balance from that day on).
+    const unpaid = a.amountCents - appliedRepayments(db, a.documentId).reduce((sum, r) => sum + r.amountCents, 0);
+    if (unpaid <= 0) continue;
+    const openCents = Math.min(unpaid, left);
     open.push({ ...a, openCents });
     left -= openCents;
   }

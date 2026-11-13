@@ -4,6 +4,8 @@
  *   Dr cash place / Cr 1210 Advances to employees (employee)
  * Never more than can be taken on its date without leaving a later payroll deduction uncovered (owedFrom, as the
  * payroll uses it). Cancel mirrors it on the cancel day; what is owed goes back up, so nothing depends on it.
+ * It may be applied to one open advance (the owner's request, Nov 2026), at most what is left of it: that advance is
+ * paid by it, and once paid in full the next payroll no longer deducts its instalment (advanceSchedule).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -11,7 +13,7 @@ import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import { employee } from '../../EMP/public.ts';
-import { owedFrom, owing } from '../public.ts';
+import { advanceSchedule, owedFrom, owing } from '../public.ts';
 
 const MAX_CENTS = 1_000_000_00; // ₱1 million: a typo guard
 
@@ -22,10 +24,13 @@ export const repaymentInput = z
     amountCents: z.number().int().positive().max(MAX_CENTS),
     reference: z.string().trim().min(1).max(60).optional(), // the bank or GCash transfer reference
     note: z.string().trim().min(1).max(300).optional(),
+    advanceId: z.string().min(1).optional(), // the open cash advance (CA- or opening) it pays; none: not a particular one
   })
   .strict();
 export type RepaymentInput = z.infer<typeof repaymentInput>;
-export interface Repayment extends RepaymentInput { employeeName: string; cashPlaceName: string; totalCents: number }
+export interface Repayment extends RepaymentInput { employeeName: string; cashPlaceName: string; totalCents: number; advanceNumber?: string }
+
+const numberOf = (db: Parameters<typeof owedFrom>[0], id: string) => db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(id) as string | undefined;
 
 /** The issues of an amount taken off what an employee owes on a date (a repayment or a write-off). */
 export function owedIssues(db: Parameters<typeof owedFrom>[0], doc: { employeeId: string; employeeName: string; amountCents: number }, businessDate: string, what: string): Issue[] {
@@ -51,18 +56,26 @@ export const repaymentDoc: DocTypeDef<RepaymentInput, Repayment> = {
       employeeName: employee(ctx.db, input.employeeId)?.name ?? '?',
       cashPlaceName: getCashPlace(ctx.db, input.cashPlaceId)?.name ?? '?',
       totalCents: input.amountCents,
+      ...(input.advanceId ? { advanceNumber: numberOf(ctx.db, input.advanceId) ?? '?' } : {}),
     };
   },
 
   validate(doc, ctx) {
     const issues = owedIssues(ctx.db, doc, ctx.businessDate, 'repayment');
     if (!getCashPlace(ctx.db, doc.cashPlaceId)?.isActive) issues.push({ field: 'cashPlaceId', code: 'CASH_PLACE', level: 'error', message: 'Pick where the money went.' });
+    if (doc.advanceId && issues.length === 0) {
+      const open = advanceSchedule(ctx.db, doc.employeeId, ctx.businessDate).open.find((a) => a.documentId === doc.advanceId);
+      if (!open) issues.push({ field: 'advanceId', code: 'ADVANCE_NOT_OPEN', level: 'error', message: `${doc.advanceNumber ?? 'That cash advance'} is not one ${doc.employeeName} still owes on. Pick another, or none.` });
+      else if (doc.amountCents > open.openCents) {
+        issues.push({ field: 'amountCents', code: 'MORE_THAN_ADVANCE', level: 'error', message: `${open.number} has ${formatPeso(open.openCents)} left, so a repayment applied to it cannot be more. Record the rest separately, or apply it to none.` });
+      }
+    }
     return issues;
   },
 
   persist(db, doc, h) {
-    db.prepare('INSERT INTO ca_repayments (document_id, employee_id, employee_name, cash_account_id, amount_cents, reference, note) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-      h.documentId, doc.employeeId, doc.employeeName, doc.cashPlaceId, doc.amountCents, doc.reference ?? null, doc.note ?? null,
+    db.prepare('INSERT INTO ca_repayments (document_id, employee_id, employee_name, cash_account_id, amount_cents, reference, note, advance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+      h.documentId, doc.employeeId, doc.employeeName, doc.cashPlaceId, doc.amountCents, doc.reference ?? null, doc.note ?? null, doc.advanceId ?? null,
     );
   },
 
@@ -78,20 +91,23 @@ export const repaymentDoc: DocTypeDef<RepaymentInput, Repayment> = {
 
   load(db, documentId) {
     const r = db.prepare('SELECT * FROM ca_repayments WHERE document_id = ?').get(documentId) as
-      | { employee_id: string; employee_name: string; cash_account_id: number; amount_cents: number; reference: string | null; note: string | null }
+      | { employee_id: string; employee_name: string; cash_account_id: number; amount_cents: number; reference: string | null; note: string | null; advance_id: string | null }
       | undefined;
     if (!r) throw new Error(`Cash advance repayment ${documentId} not found`);
     return {
       employeeId: r.employee_id, cashPlaceId: r.cash_account_id, amountCents: r.amount_cents, ...(r.reference ? { reference: r.reference } : {}), ...(r.note ? { note: r.note } : {}),
       employeeName: r.employee_name, cashPlaceName: getCashPlace(db, r.cash_account_id)?.name ?? '?', totalCents: r.amount_cents,
+      ...(r.advance_id ? { advanceId: r.advance_id, advanceNumber: numberOf(db, r.advance_id) ?? '?' } : {}),
     };
   },
 
-  toInput: ({ employeeId, cashPlaceId, amountCents, reference, note }) => ({ employeeId, cashPlaceId, amountCents, ...(reference ? { reference } : {}), ...(note ? { note } : {}) }),
+  toInput: ({ employeeId, cashPlaceId, amountCents, reference, note, advanceId }) =>
+    ({ employeeId, cashPlaceId, amountCents, ...(reference ? { reference } : {}), ...(note ? { note } : {}), ...(advanceId ? { advanceId } : {}) }),
 
   summary(doc, ctx) {
     const left = owedFrom(ctx.db, doc.employeeId, ctx.businessDate) - doc.amountCents;
-    return `This will record ${formatPeso(doc.amountCents)} paid back by ${doc.employeeName} into ${doc.cashPlaceName}${left >= 0 ? `, leaving ${formatPeso(left)} owed on cash advances` : ''}.`;
+    const toward = doc.advanceNumber ? ` for ${doc.advanceNumber}` : '';
+    return `This will record ${formatPeso(doc.amountCents)} paid back by ${doc.employeeName}${toward} into ${doc.cashPlaceName}${left >= 0 ? `, leaving ${formatPeso(left)} owed on cash advances` : ''}.`;
   },
 
   /** Someone who owes pays back part or all of it. */
