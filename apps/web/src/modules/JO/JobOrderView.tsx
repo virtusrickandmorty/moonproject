@@ -234,10 +234,12 @@ function RecordAgain({ d }: { d: DocDetail }) {
   const doc = d.doc as { againBy?: { id: string; number: string }; againOf?: string; againOfNumber?: string } | undefined;
   const [can, setCan] = useState(false);
   useEffect(() => void api.docTypes().then((ts) => setCan(!!ts.find((t) => t.key === 'jo.invoice_record')?.canCancel), () => undefined), []);
-  if (doc?.againOf) return <Link to={docPath('jo.invoice_record', `/${doc.againOf}`)} className={action}>Records {doc.againOfNumber} again</Link>;
-  if (d.header.status !== 'cancelled' || d.header.replacedById) return null;
-  if (doc?.againBy) return <Link to={docPath('jo.invoice_record', `/${doc.againBy.id}`)} className={action}>Recorded again as {doc.againBy.number}</Link>;
-  return can ? <Link to={`/docs/jo.invoice_record/new?again=${encodeURIComponent(d.header.id)}`} className={action}>Cancelled by mistake? Record it again</Link> : null;
+  // A record that itself records one again, cancelled in turn, can be recorded again too (the owner's case, Nov 2026).
+  const of = doc?.againOf ? <Link to={docPath('jo.invoice_record', `/${doc.againOf}`)} className={action}>Records {doc.againOfNumber} again</Link> : null;
+  const next = d.header.status !== 'cancelled' || d.header.replacedById ? null
+    : doc?.againBy ? <Link to={docPath('jo.invoice_record', `/${doc.againBy.id}`)} className={action}>Recorded again as {doc.againBy.number}</Link>
+    : can ? <Link to={`/docs/jo.invoice_record/new?again=${encodeURIComponent(d.header.id)}`} className={action}>Cancelled by mistake? Record it again</Link> : null;
+  return <>{of}{next}</>;
 }
 export const invoiceRecordView: ViewParts = { extra: (d) => <><ToJobOrder d={d} /><RecordAgain d={d} /></> };
 
