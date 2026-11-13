@@ -686,7 +686,7 @@ export interface ReleaseRow {
 export interface CaStatus {
   employeeId: string; name: string; active: boolean; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[];
   /** Repayments (CAR-) and write-offs (CAW-) still recorded, oldest first, with what was owed right after each. */
-  settlements: { documentId: string; number: string; kind: 'repayment' | 'writeoff'; businessDate: string; amountCents: number; balanceAfterCents: number }[];
+  settlements: { documentId: string; number: string; kind: 'repayment' | 'writeoff'; businessDate: string; amountCents: number; balanceAfterCents: number; /** the advance a repayment was applied to */ advanceNumber?: string }[];
 }
 export interface CaOwing { employeeId: string; name: string; owedCents: number }
 export interface ActiveEmployee { id: string; code: string; name: string; costCentre: string }

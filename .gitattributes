@@ -10,3 +10,4 @@ apps/server/src/modules/ALT/migrations/*.sql text eol=lf
 apps/server/src/modules/DASH/migrations/0002_dash_notification_seen.sql text eol=lf
 apps/server/src/modules/JO/migrations/0009_jo_roster_lower_size.sql text eol=lf
 apps/server/src/modules/PRD/migrations/0010_prd_route_order.sql text eol=lf
+apps/server/src/modules/CA/migrations/0004_ca_repayment_advance.sql text eol=lf

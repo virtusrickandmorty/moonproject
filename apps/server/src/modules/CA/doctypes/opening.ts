@@ -15,7 +15,7 @@ import type { Db } from '../../../platform/db/driver.ts';
 import { resolveAccount } from '../../../engine/ledger/accounts.ts';
 import { assertOpeningOpen, duplicateOpeningIssue, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { activeEmployees, employee } from '../../EMP/public.ts';
-import { caBalance } from '../public.ts';
+import { appliedRepayments, caBalance } from '../public.ts';
 
 const MAX_CENTS = 1_000_000_00; // ₱1 million: a typo guard
 
@@ -101,7 +101,11 @@ export const openingCaDoc: DocTypeDef<OpeningCaInput, OpeningCa> = {
     const r = db.prepare('SELECT employee_id, amount_cents FROM ca_advances WHERE document_id = ?').get(documentId) as
       | { employee_id: string; amount_cents: number }
       | undefined;
-    if (!r || caBalance(db, r.employee_id) >= r.amount_cents) return [];
+    if (!r) return [];
+    // A repayment applied to it is cancelled first (the owner's request, Nov 2026: repayments applied to an advance).
+    const applied = appliedRepayments(db, documentId);
+    if (applied.length) return applied.map(({ id, number }) => ({ id, number }));
+    if (caBalance(db, r.employee_id) >= r.amount_cents) return [];
     return db
       .prepare(
         `SELECT DISTINCT d.id, d.number FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN documents d ON d.id = j.source_id

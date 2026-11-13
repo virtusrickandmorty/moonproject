@@ -18,9 +18,11 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 
 describe('repayment and write-off screen rules', () => {
   it('typed values to input, and what is missing', () => {
-    expect(repaymentInput({ employeeId: 'e1', cashPlaceId: '3', amount: '1,500.50', reference: ' GCash 123 ', note: '' })).toEqual({
+    expect(repaymentInput({ employeeId: 'e1', cashPlaceId: '3', amount: '1,500.50', reference: ' GCash 123 ', note: '', advanceId: '' })).toEqual({
       input: { employeeId: 'e1', cashPlaceId: 3, amountCents: 150_050, reference: 'GCash 123' }, errors: [],
     });
+    // Applied to one advance (the owner's request, Nov 2026).
+    expect(repaymentInput({ ...emptyRepayment('e1'), cashPlaceId: '3', amount: '2000', advanceId: 'ca1' }).input).toEqual({ employeeId: 'e1', cashPlaceId: 3, amountCents: 200_000, advanceId: 'ca1' });
     expect(repaymentInput(emptyRepayment()).errors).toEqual(['Pick who pays back.', 'Pick where the money went.', 'Type the amount paid back, like 500.00']);
     // A blank amount writes off all that is owed.
     expect(writeoffInput({ employeeId: 'e1', amount: '', accountId: '7', reason: ' Left the shop in August ' })).toEqual({

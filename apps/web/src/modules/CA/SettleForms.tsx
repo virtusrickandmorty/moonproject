@@ -1,7 +1,8 @@
 /**
  * Cash advance repayment (CAR-) and write-off (CAW-) forms (PLAN D5 CA-REPAY, CA-WO, E11): who, from the employees who
  * owe (separated ones too), what they owe now, and the amount. Opened from the employee's cash advance view with
- * ?employee=<id>. Also their Edit (cancel and reissue, NR-4).
+ * ?employee=<id>. Also their Edit (cancel and reissue, NR-4). A repayment may be applied to one open advance (the
+ * owner's request, Nov 2026): paid in full, the next payroll no longer deducts that advance's instalment.
  */
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
@@ -49,29 +50,58 @@ export function RepaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   const [status, setStatus] = useState<CaStatus | null>(null);
   const [v, setV] = useState(() => emptyRepayment(mode.kind === 'new' ? asked() : ''));
   const r = useRecord(type, mode, (d) => {
-    const s = d.input as { employeeId: string; cashPlaceId: number; amountCents: number; reference?: string; note?: string };
-    setV({ employeeId: s.employeeId, cashPlaceId: String(s.cashPlaceId), amount: formatPesos(s.amountCents), reference: s.reference ?? '', note: s.note ?? '' });
+    const s = d.input as { employeeId: string; cashPlaceId: number; amountCents: number; reference?: string; note?: string; advanceId?: string };
+    setV({ employeeId: s.employeeId, cashPlaceId: String(s.cashPlaceId), amount: formatPesos(s.amountCents), reference: s.reference ?? '', note: s.note ?? '', advanceId: s.advanceId ?? '' });
   });
   useEffect(() => void api.cashPlaces().then(setPlaces, r.fail), []);
   const { input, errors } = repaymentInput(v);
   const live = useLive(JSON.stringify(input), errors.length === 0, () => r.preview(input));
+  const open = status?.open ?? [];
+  const picked = open.find((a) => a.documentId === v.advanceId);
+  // On Edit the advance it was applied to may show as paid (this repayment still counts until Record): kept as a choice.
+  const keptAdvance = v.advanceId && !picked;
+  const all = picked ? picked.openCents : status?.outstandingCents ?? 0;
 
   if (r.gate) return r.gate;
   return (
     <form onSubmit={(e) => e.preventDefault()} className="max-w-2xl space-y-4">
       <h1 className="text-2xl font-semibold">{r.title('Cash advance paid back')}</h1>
       {r.top}
-      <Who question="Who pays back?" employeeId={v.employeeId} onPick={(employeeId) => setV({ ...v, employeeId })} onStatus={setStatus} />
+      <Who question="Who pays back?" employeeId={v.employeeId} onPick={(employeeId) => setV({ ...v, employeeId, advanceId: employeeId === v.employeeId ? v.advanceId : '' })} onStatus={setStatus} />
+      {(open.length > 0 || keptAdvance) && (
+        <Panel title="Which cash advance does it pay?">
+          <fieldset className="min-w-0 space-y-1">
+            <legend className="sr-only">Which cash advance does it pay?</legend>
+            <label className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm">
+              <input type="radio" name="advance" className="mt-0.5" checked={!v.advanceId} onChange={() => setV({ ...v, advanceId: '' })} />
+              <span>None in particular <span className="text-slate-500">· the oldest is paid first; the payroll deduction stays as it is until all is paid</span></span>
+            </label>
+            {open.map((a) => (
+              <label key={a.documentId} className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm">
+                <input type="radio" name="advance" className="mt-0.5" checked={v.advanceId === a.documentId} onChange={() => setV({ ...v, advanceId: a.documentId })} />
+                <span className="min-w-0 break-words"><b>{a.number}</b> · {peso(a.openCents)} left of {peso(a.amountCents)} <span className="text-slate-500">· {peso(a.installmentCents)} deducted each payroll</span></span>
+              </label>
+            ))}
+            {keptAdvance && (
+              <label className="flex items-start gap-2 rounded-lg px-2 py-1.5 text-sm">
+                <input type="radio" name="advance" className="mt-0.5" checked readOnly />
+                <span>The cash advance it was applied to</span>
+              </label>
+            )}
+          </fieldset>
+          {picked && <p className="text-sm text-slate-600">Paying all {peso(picked.openCents)} left of {picked.number} stops its {peso(picked.installmentCents)} deduction from the next payroll.</p>}
+        </Panel>
+      )}
       <Panel title="Where did the money go?">
         <CashPlaceButtons label="Where did the money go?" places={places} value={v.cashPlaceId} onChange={(cashPlaceId) => setV({ ...v, cashPlaceId })} />
       </Panel>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Amount" required hint={status && status.outstandingCents > 0 ? `All of it is ${peso(status.outstandingCents)}` : undefined}>
+        <Field label="Amount" required hint={all > 0 ? `All of ${picked ? picked.number : 'it'} is ${peso(all)}` : undefined}>
           <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} />
         </Field>
         <Field label="Reference (bank or GCash)"><input className={inputClass} value={v.reference} onChange={(e) => setV({ ...v, reference: e.target.value })} /></Field>
       </div>
-      {status && status.outstandingCents > 0 && <Button onClick={() => setV({ ...v, amount: formatPesos(status.outstandingCents) })}>All of it</Button>}
+      {all > 0 && <Button onClick={() => setV({ ...v, amount: formatPesos(all) })}>{picked ? `All of ${picked.number}` : 'All of it'}</Button>}
       <Field label="Note"><input className={inputClass} value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} /></Field>
       <Live live={live} />
       <Errors list={errors} show={r.touched} />
