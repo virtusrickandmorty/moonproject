@@ -19,6 +19,7 @@ import { jobOrderRef, lineState, liveReplacementOf } from '../JO/public.ts';
 import { rateAt } from '../RATE/public.ts';
 import { openJobsFor, scanPieces, scansOf, waitingByWearer, waitingPieces, workerSteps } from './checks.ts';
 import { SET_PARTS, availableFor, lineRoute, lineSetup, listSteps, type Part } from './production.ts';
+import { notPaidPerPiece } from './emp.ts';
 import { pieceWork } from './public.ts';
 
 /** YYYY-MM-DD plus some days, as calendar arithmetic on the date alone (no clock, no time zone). */
@@ -99,7 +100,9 @@ export function floorToday(db: Db, userId: string, today: string) {
 
 /** A job order as the worker sees it: each line's steps with pieces and what is left, the wearers, and their rate. */
 export function floorJob(db: Db, userId: string, ref: string, today: string) {
-  const mine = workerSteps(db, floorWorker(db, userId).id);
+  const me = floorWorker(db, userId);
+  const mine = workerSteps(db, me.id);
+  const salaried = !!notPaidPerPiece(db, me.id, today); // paid by the month or the day: no piece rate to show
   // A ticket's QR or a typed number: "231", "JO-000231" or the id; an edited job order opens its replacement.
   const t = ref.trim().toUpperCase();
   const number = /^\d{1,6}$/.test(t) ? `JO-${t.padStart(6, '0')}` : t;
@@ -121,7 +124,7 @@ export function floorJob(db: Db, userId: string, ref: string, today: string) {
         waiting: waitingPieces(db, jo.id, l.lineNo, s.id), // scanned, not checked yet
         waitingWearers: Object.fromEntries(waitingByWearer(db, jo.id, l.lineNo, s.id)), // the same per wearer (roster row → pieces)
         ...(setup.isSet ? { partWaiting: { upper: waitingPieces(db, jo.id, l.lineNo, s.id, 'upper'), lower: waitingPieces(db, jo.id, l.lineNo, s.id, 'lower') }, partWaitingWearers: { upper: Object.fromEntries(waitingByWearer(db, jo.id, l.lineNo, s.id, 'upper')), lower: Object.fromEntries(waitingByWearer(db, jo.id, l.lineNo, s.id, 'lower')) } } : {}),
-        rates: parts.map((part) => ({ part, rateCents: s.payBasis === 'daily' ? null : rateAt(db, setup.garmentType, s.code, setup.complexity, today, part)?.rateCents ?? null })),
+        rates: parts.map((part) => ({ part, rateCents: s.payBasis === 'daily' || salaried ? null : rateAt(db, setup.garmentType, s.code, setup.complexity, today, part)?.rateCents ?? null })),
       })),
     }];
   });

@@ -28,7 +28,7 @@ import { conflict, isBusinessDate, manilaDate, newId, type Issue } from '@moonpr
 import type { DocContext, DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
-import { activeEmployees, employee } from '../emp.ts';
+import { activeEmployees, employee, notPaidPerPiece } from '../emp.ts';
 import { SET_PARTS, autoComplete, availableFor, lineRate, reopenShort, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearerPieces, wearersDone, type Complexity, type Part } from '../production.ts';
 
 const MAX_PIECES = 10_000;
@@ -144,8 +144,10 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       const table = kind !== 'correction' && step ? rateAt(ctx.db, garmentType, step.code, complexity, isBusinessDate(workDate) ? workDate : ctx.businessDate, part) : undefined;
       // A rate set on the line (an alteration) comes before the garment's rate; it is recorded as a table rate, a set one.
       const set = kind !== 'correction' && step ? lineRate(ctx.db, input.jobOrderId, r.lineNo, step.code) : undefined;
+      // A worker paid by the month or the day is not paid per piece: their pieces are progress only, at ₱0.
+      const salaried = kind !== 'correction' && notPaidPerPiece(ctx.db, r.employeeId, isBusinessDate(workDate) ? workDate : ctx.businessDate);
       const [rateCents, rateSource]: [number, RateSource] =
-        r.rateCents !== undefined ? [r.rateCents, 'typed'] : was ? [was.rateCents, 'original'] : set ? [set.rateCents, 'table'] : table ? [table.rateCents, 'table'] : [0, 'none'];
+        r.rateCents !== undefined ? [r.rateCents, 'typed'] : was ? [was.rateCents, 'original'] : salaried ? [0, 'none'] : set ? [set.rateCents, 'table'] : table ? [table.rateCents, 'table'] : [0, 'none'];
       return { ...r, rowNo: i + 1, employeeName: employee(ctx.db, r.employeeId)?.name ?? '?', kind, garmentType, complexity, rateCents, rateSource, amountCents: r.pieces * rateCents, part };
     });
     return {
@@ -221,8 +223,10 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         add('error', `${f}.repeatReason`, 'LIKELY_REPEAT', `${at}: ${repeats.join(', ')} already has ${plural(r.pieces)} of ${step.name} by ${r.employeeName} on line ${r.lineNo} dated ${doc.workDate}. If this is a different sheet, say why; if the pieces were redone, record them as rework.`);
       }
       const what = `${r.garmentType} (${r.complexity})`;
-      if (onRoute && r.kind !== 'correction' && r.rateSource === 'none' && step.payBasis === 'piece') add('error', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}. Type the rate and a reason.`);
-      if (onRoute && r.kind !== 'correction' && r.rateSource === 'none' && step.payBasis === 'piece_or_daily') add('warning', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}, so these pieces count as progress only (₱0).`);
+      const salaried = r.kind !== 'correction' && r.rateSource === 'none' && notPaidPerPiece(ctx.db, r.employeeId, isBusinessDate(doc.workDate) ? doc.workDate : ctx.businessDate);
+      if (onRoute && salaried) add('warning', `${f}.rateCents`, 'NOT_PIECE_PAID', `${at}: ${r.employeeName} is paid ${salaried === 'monthly' ? 'by the month' : 'by the day'}, not per piece, so these pieces count as progress only (₱0).`);
+      else if (onRoute && r.kind !== 'correction' && r.rateSource === 'none' && step.payBasis === 'piece') add('error', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}. Type the rate and a reason.`);
+      else if (onRoute && r.kind !== 'correction' && r.rateSource === 'none' && step.payBasis === 'piece_or_daily') add('warning', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}, so these pieces count as progress only (₱0).`);
       const isSet = !!line && !!lineSetup(ctx.db, jo.id, line.lineNo)?.isSet;
       if (line && isSet && r.kind !== 'correction' && r.part === 'whole') add('error', `${f}.part`, 'PART_REQUIRED', `${at}: line ${line.lineNo} is a set. Pick the upper or the lower part.`);
       if (line && !isSet && r.part !== 'whole') add('error', `${f}.part`, 'PART_NOT_SET', `${at}: line ${line.lineNo} is not a set, so it has no upper or lower part.`);
