@@ -77,7 +77,7 @@ it('keeps the number and releases, and needs a reason and the right to cancel in
   const { first, second, id, input } = await invoicedThenCancelled();
   const again = { ...input, againOf: id, note: 'Cancelled by mistake' };
   expect(codes((await accountant.post(`${IR}/preview`, { input: { ...again, invoiceNumber: '0902' } })).json().issues)).toContain('AGAIN_NUMBER');
-  expect(codes((await accountant.post(`${IR}/preview`, { input: { releaseId: second.id, invoiceNumber: '0901', againOf: id, note: 'x' } })).json().issues)).toContain('AGAIN_RELEASES');
+  expect(codes((await accountant.post(`${IR}/preview`, { input: { releaseId: second.id, invoiceNumber: '0901', againOf: id, note: 'x' } })).json().issues)).toContain('AGAIN_RELEASES'); // one left out
   expect(codes((await accountant.post(`${IR}/preview`, { input: { ...again, releaseId: first.id, alsoReleaseIds: [second.id] } })).json().issues)).toEqual([]); // same releases, any order
   const { note: _, ...noNote } = again;
   expect(codes((await accountant.post(`${IR}/preview`, { input: noNote })).json().issues)).toContain('AGAIN_NOTE');
@@ -93,4 +93,19 @@ it('records again only a cancelled invoice record', async () => {
   const p = await accountant.post(`${IR}/preview`, { input: { ...input, againOf: ir.json().id, note: 'x' } });
   expect(codes(p.json().issues)).toEqual(expect.arrayContaining(['AGAIN_NOT_CANCELLED', 'ALREADY_INVOICED']));
   expect(codes((await accountant.post(`${IR}/preview`, { input: { ...input, againOf: jo, note: 'x' } })).json().issues)).toContain('AGAIN_NOT_FOUND');
+});
+
+it('takes in a release made since, when the same paper invoice was written for the whole order', async () => {
+  const { jo, first, second, id, input } = await invoicedThenCancelled();
+  const third = await release(jo, 5); // released after the invoice was written for all ten
+  const again = { ...input, alsoReleaseIds: [first.id, third.id], againOf: id, note: 'Invoice no. 901 was written for the whole order' };
+  const p = await accountant.post(`${IR}/preview`, { input: again });
+  expect(codes(p.json().issues)).toEqual([]);
+  expect(p.json().totalCents).toBe(1_120_000);
+  const r = await accountant.post(`${IR}/post`, { input: again, expectedTotalCents: 1_120_000 }, idem());
+  expect(r.statusCode, r.body).toBe(200);
+  expect(releasesAwaitingInvoice(env.db, '2099-12-31')).toEqual([]);
+  expect(joMoney(env.db, jo)).toMatchObject({ invoicedCents: 1_120_000 });
+  expect(second.id).toBe(input.releaseId);
+  expect(runInvariants(env.db).filter((x) => !x.ok)).toEqual([]);
 });

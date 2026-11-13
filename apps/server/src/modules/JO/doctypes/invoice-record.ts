@@ -16,7 +16,9 @@
  * order with no invoice yet, written on the same booklet invoice; the sale is all of their lines (jo_invoice_record_releases,
  * read through the jo_invoice_covers view).
  * Recorded again (the owner's request, Nov 2026): an invoice record cancelled by mistake, its paper invoice still standing,
- * is recorded again with `againOf`: the same booklet number and the same releases, with a note saying why. Only someone who
+ * is recorded again with `againOf`: the same booklet number and its releases, with a note saying why. Releases of the job
+ * order released since, with no invoice yet, may go on it too: a booklet invoice written for the whole order at the first
+ * release (the owner's request, Nov 2026). Only someone who
  * may cancel invoice records does it. The paper invoice is still used once; the cancelled record and the new one share it.
  */
 import { z } from 'zod';
@@ -216,13 +218,13 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     }
     const again = doc.againOf ? cancelledRecord(ctx.db, doc.againOf) : undefined;
     if (doc.againOf) {
-      const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
       if (!again) error('againOf', 'AGAIN_NOT_FOUND', 'The cancelled invoice record to record again was not found.');
       else if (again.status !== 'cancelled') error('againOf', 'AGAIN_NOT_CANCELLED', `${again.number} is not cancelled, so there is nothing to record again.`);
       else if (again.againBy) error('againOf', 'AGAIN_DONE', `${again.number} was already recorded again as ${again.againBy}.`);
       else {
         if (Number(again.invoiceNumber) !== Number(doc.invoiceNumber)) error('invoiceNumber', 'AGAIN_NUMBER', `Recording ${again.number} again keeps its invoice no. ${again.invoiceNumber}.`);
-        if (!same(again.releaseIds, [doc.releaseId, ...(doc.alsoReleaseIds ?? [])])) error('releaseId', 'AGAIN_RELEASES', `Recording ${again.number} again keeps the releases it was for. To invoice other releases, write a new invoice.`);
+        const now = [doc.releaseId, ...(doc.alsoReleaseIds ?? [])];
+        if (!again.releaseIds.every((id) => now.includes(id))) error('releaseId', 'AGAIN_RELEASES', `Recording ${again.number} again keeps every release it was for. Tick them all; you may add others of the same job order.`);
       }
       if (!doc.note) error('note', 'AGAIN_NOTE', 'Say why the invoice is recorded again, like "cancelled by mistake".');
       if (!ctx.can('jo.invoice_cancel')) error('againOf', 'AGAIN_PERMISSION', 'Only someone who may cancel invoice records can record one again.');

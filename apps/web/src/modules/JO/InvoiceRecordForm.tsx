@@ -83,7 +83,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{rec.title('New invoice record')}</h1>
         {rec.top}
-        {again && <Notice tone="note">Recording {again.number} again, cancelled by mistake: the same invoice no. {again.invoiceNumber} and the same releases. Use this only when the paper invoice still stands.</Notice>}
+        {again && <Notice tone="note">Recording {again.number} again, cancelled by mistake: the same invoice no. {again.invoiceNumber} and its releases. Tick any later release of this job order that the same paper invoice covers. Use this only when the paper invoice still stands.</Notice>}
         <Panel title="Release">
           <ReleasePicker value={r} preset={preset} onChange={(x) => void choose(x)} />
           {blocked && <Notice tone="warning">{blocked}</Notice>}
