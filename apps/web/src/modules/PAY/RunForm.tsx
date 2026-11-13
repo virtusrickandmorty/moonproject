@@ -25,6 +25,7 @@ const firstToPay = (periods: PayPeriod[]) => periods.find((x) => !x.recorded && 
 export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me?: Me }) {
   const [payGroup, setPayGroup] = useState<PayGroup>('SEMI_DAILY');
   const [periods, setPeriods] = useState<PayPeriod[] | null>(null);
+  const [periodsOf, setPeriodsOf] = useState<PayGroup | null>(null); // the pay group the periods were loaded for
   const [periodStart, setPeriodStart] = useState('');
   const [rows, setRows] = useState<ManualRow[]>([]);
   const [advances, setAdvances] = useState<Record<string, string>>({});
@@ -39,7 +40,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   const chosenByUser = useRef(false);
   useEffect(() => {
     setPeriods(null);
-    api.payPeriods(payGroup).then((p) => (setPeriods(p), setPeriodStart(firstToPay(p)?.periodStart ?? '')), (e: Error) => setError(e.message));
+    api.payPeriods(payGroup).then((p) => (setPeriods(p), setPeriodsOf(payGroup), setPeriodStart(firstToPay(p)?.periodStart ?? '')), (e: Error) => setError(e.message));
   }, [payGroup]);
   // Opens on a pay group that has someone to pay, not on one the shop does not use (a made-up empty period says "nobody in service").
   useEffect(() => {
@@ -81,13 +82,15 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   useEffect(() => setNames({}), [payGroup]);
   const run = last;
   // Piece work after the cut-off: fetched again with each new calculation, so it follows what was recorded meanwhile.
+  // Asked only for a period loaded for the pay group shown: while the group changes, the start picked is the old group's.
   const [after, setAfter] = useState<PayAfterCutoff | null>(null);
+  const afterStart = periodsOf === payGroup ? period?.periodStart : undefined;
   useEffect(() => {
-    if (!periodStart) return setAfter(null);
+    if (!afterStart) return setAfter(null);
     let gone = false;
-    api.payAfterCutoff(payGroup, periodStart).then((a) => !gone && setAfter(a), () => !gone && setAfter(null));
+    api.payAfterCutoff(payGroup, afterStart).then((a) => !gone && setAfter(a), () => !gone && setAfter(null));
     return () => { gone = true; };
-  }, [payGroup, periodStart, live]);
+  }, [payGroup, afterStart, live]);
 
   if (mode.kind === 'edit') {
     return (
