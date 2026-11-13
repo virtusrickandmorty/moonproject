@@ -3,6 +3,8 @@
  * Pick the release by its number, see what to write on the booklet, type the invoice number. It says plainly when the
  * release already has its invoice. Also its Edit (cancel and reissue with a new booklet number, NR-4). The job order's other
  * releases with no invoice yet are ticked to go on the same invoice (the owner's request, Nov 2026).
+ * Opened with ?again=<id> from a cancelled invoice record: records it again with its invoice number and releases (cancelled
+ * by mistake, the owner's request, Nov 2026).
  */
 import { useEffect, useState } from 'react';
 import { api, type BookletShown, type DocTypeInfo, type Preview, type ReleaseInvoiceInfo, type ReleasePick } from '../../api.ts';
@@ -16,6 +18,7 @@ import { AlsoOnInvoice, Booklet, ReleasePicker } from './parts.tsx';
 import { invoiceBooklet, invoiceInput } from './forms.ts';
 
 type Stored = { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; note?: string };
+type Again = { id: string; number: string; invoiceNumber: string };
 
 export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [info, setInfo] = useState<ReleaseInvoiceInfo | null>(null);
@@ -43,13 +46,26 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
   }, []);
 
   const printed = usePrintedDate(rec.original);
+  const [again, setAgain] = useState<Again | null>(null); // the cancelled record recorded again, from ?again=
+  useEffect(() => {
+    const id = mode.kind === 'new' ? new URLSearchParams(location.search).get('again') : null;
+    if (!id) return;
+    api.get('jo.invoice_record', id).then((d) => {
+      const input = d.input as unknown as Stored;
+      setAgain({ id, number: d.header.number, invoiceNumber: input.invoiceNumber });
+      setInvoice(input.invoiceNumber);
+      setPicked(input.alsoReleaseIds ?? []);
+      printed.setText(d.header.businessDate);
+      return api.joReleaseInfo(input.releaseId, input.alsoReleaseIds).then(setInfo);
+    }).catch(rec.fail);
+  }, []);
   const r = info?.release ?? null;
   const others = info?.others ?? [];
   const also = others.filter((o) => (picked ?? others.map((x) => x.id)).includes(o.id)).map((o) => o.id);
   // The lines and booklet figures follow the releases ticked.
   const alsoKey = also.join(',');
   useEffect(() => { if (r) api.joReleaseInfo(r.id, also).then((i) => { if (JSON.stringify(i) !== JSON.stringify(info)) setInfo(i); }, rec.fail); }, [r?.id, alsoKey]);
-  const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, note, also });
+  const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, note, also, ...(again ? { againOf: again.id } : {}) });
   const live = useLive<Preview | null>(JSON.stringify([typed.input, printed.businessDate]), typed.errors.length === 0 && !printed.error, () => rec.preview(typed.input, printed.businessDate));
   // The preview's own figures once it answers; until then the release's. In mode C both show the sale less the downpayments invoiced.
   const doc = live?.doc as Parameters<typeof invoiceBooklet>[0] & { depositAppliedCents: number } | undefined;
@@ -67,6 +83,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{rec.title('New invoice record')}</h1>
         {rec.top}
+        {again && <Notice tone="note">Recording {again.number} again, cancelled by mistake: the same invoice no. {again.invoiceNumber} and the same releases. Use this only when the paper invoice still stands.</Notice>}
         <Panel title="Release">
           <ReleasePicker value={r} preset={preset} onChange={(x) => void choose(x)} />
           {blocked && <Notice tone="warning">{blocked}</Notice>}
@@ -79,11 +96,11 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
         </Panel>
         <Panel title="Invoice">
           <Field label="Invoice number (from the booklet)" required
-            hint={was ? `Invoice no. ${was} stays with the cancelled record (keep all its copies): write this sale on a new invoice.` : 'Type the number printed on the invoice you wrote.'}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+            hint={again ? `The number of ${again.number}, kept.` : was ? `Invoice no. ${was} stays with the cancelled record (keep all its copies): write this sale on a new invoice.` : 'Type the number printed on the invoice you wrote.'}>
+            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} readOnly={!!again} onChange={(e) => setInvoice(e.target.value)} />
           </Field>
           <PrintedDateField label="Date on the invoice" value={printed.text} onChange={printed.setText} />
-          <Field label="Note"><input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+          <Field label="Note" required={!!again} hint={again ? 'Why it is recorded again, like "cancelled by mistake".' : undefined}><input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </Panel>
         <Errors list={errors} show={rec.touched} />
         <div className="space-y-4">

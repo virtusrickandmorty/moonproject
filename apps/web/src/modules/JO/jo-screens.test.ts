@@ -149,6 +149,9 @@ describe('release slip and invoice record form rules', () => {
     expect(releaseInput({ ...emptyRelease('jo-1'), claimedBy: 'A', idSeen: 'none', invoiceToFollow: true }, left).errors).toEqual(['Tick the lines and pieces going out.']);
     expect(invoiceInput({ releaseId: '', invoiceNumber: 'no. 5', note: '' }).errors).toEqual(['Pick the release by its number.', 'Type the invoice number from the booklet (digits only).']);
     expect(invoiceInput({ releaseId: 'r-1', invoiceNumber: ' 0502 ', note: ' Booklet 3 ' })).toEqual({ input: { releaseId: 'r-1', invoiceNumber: '0502', note: 'Booklet 3' }, errors: [] });
+    // Recording a cancelled invoice again: it names the cancelled record and says why.
+    expect(invoiceInput({ releaseId: 'r-1', invoiceNumber: '0502', note: ' ', againOf: 'ir-9' }).errors).toEqual(['Say why the invoice is recorded again, like "cancelled by mistake".']);
+    expect(invoiceInput({ releaseId: 'r-1', invoiceNumber: '0502', note: 'Cancelled by mistake', againOf: 'ir-9' }).input).toEqual({ releaseId: 'r-1', invoiceNumber: '0502', note: 'Cancelled by mistake', againOf: 'ir-9' });
   });
 });
 

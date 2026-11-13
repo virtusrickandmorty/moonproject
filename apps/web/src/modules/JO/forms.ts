@@ -274,11 +274,13 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
 /* ---------- Invoice record ---------- */
 
 /** `also`: earlier releases of the same job order on this invoice too (the owner's request, Nov 2026). */
-export function invoiceInput(v: { releaseId: string; invoiceNumber: string; note: string; also?: string[] }): { input: { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; note?: string }; errors: string[] } {
+export function invoiceInput(v: { releaseId: string; invoiceNumber: string; note: string; also?: string[]; againOf?: string }): { input: { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; note?: string; againOf?: string }; errors: string[] } {
   const errors: string[] = [];
   if (!v.releaseId) errors.push('Pick the release by its number.');
   if (!/^\d+$/.test(v.invoiceNumber.trim())) errors.push('Type the invoice number from the booklet (digits only).');
-  return { input: { releaseId: v.releaseId, ...(v.also?.length ? { alsoReleaseIds: v.also } : {}), invoiceNumber: v.invoiceNumber.trim(), ...optional('note', v.note) }, errors };
+  // Recording a cancelled invoice again (cancelled by mistake): it says why.
+  if (v.againOf && !v.note.trim()) errors.push('Say why the invoice is recorded again, like "cancelled by mistake".');
+  return { input: { releaseId: v.releaseId, ...(v.also?.length ? { alsoReleaseIds: v.also } : {}), invoiceNumber: v.invoiceNumber.trim(), ...optional('note', v.note), ...(v.againOf ? { againOf: v.againOf } : {}) }, errors };
 }
 
 /* ---------- Downpayment invoice (mode C) ---------- */
