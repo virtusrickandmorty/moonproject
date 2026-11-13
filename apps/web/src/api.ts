@@ -653,6 +653,8 @@ export interface PayRunInput {
 export type PayDeductionGoesTo = 'other_income' | 'owed_to_shop';
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
+/** Piece work after a payroll's last day, not paid yet: what the run leaves for the next payroll (the owner's request, Nov 2026). */
+export interface PayAfterCutoff { periodEnd: string; employees: { employeeId: string; name: string; totalCents: number; lines: PayLine[] }[] }
 export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null; /** Practice shop only: a period still under way. */ notEnded?: true }
 export interface Payslips {
   number: string; status: 'posted' | 'cancelled'; payDate: string; payGroup: PayGroup; periodStart: string; periodEnd: string; contributionMonth: string;
@@ -1517,6 +1519,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     activateHoliday: (id: number) => call<Holiday>('POST', `/api/emp/holidays/${id}/activate`, {}),
     activeEmployees: () => call<ActiveEmployee[]>('GET', '/api/emp/active'),
     payPeriods: (payGroup: PayGroup) => call<PayPeriod[]>('GET', `/api/pay/periods?payGroup=${payGroup}`),
+    payAfterCutoff: (payGroup: PayGroup, periodStart: string) => call<PayAfterCutoff>('GET', `/api/pay/after-cutoff?payGroup=${payGroup}&periodStart=${periodStart}`),
     payslips: (runId: string) => call<Payslips>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/payslips`),
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
     thirteenthYears: () => call<ThirteenthYears>('GET', '/api/pay/thirteenth/years'),

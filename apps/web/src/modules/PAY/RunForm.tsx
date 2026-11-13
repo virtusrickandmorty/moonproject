@@ -4,10 +4,11 @@
  * Staff may add manual lines, change this run's cash-advance deduction, change or skip a government loan deduction with a
  * note, or leave someone out, with a reason. On a period ending in December the accountant may tick the year-end tax
  * adjustment: the preview then shows each employee's refund or deficiency, and "Pay unused leave" (SIL days left, in
- * cash). An employee separated within the period gets their final pay, marked with a badge.
+ * cash). An employee separated within the period gets their final pay, marked with a badge. Piece work done after the
+ * period's last day, not paid yet, is listed under it: the next payroll pays it (the owner's request, Nov 2026).
  */
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
+import { api, ApiError, type DocTypeInfo, type Me, type PayAfterCutoff, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
@@ -79,6 +80,14 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   useEffect(() => setLast(null), [payGroup, periodStart]);
   useEffect(() => setNames({}), [payGroup]);
   const run = last;
+  // Piece work after the cut-off: fetched again with each new calculation, so it follows what was recorded meanwhile.
+  const [after, setAfter] = useState<PayAfterCutoff | null>(null);
+  useEffect(() => {
+    if (!periodStart) return setAfter(null);
+    let gone = false;
+    api.payAfterCutoff(payGroup, periodStart).then((a) => !gone && setAfter(a), () => !gone && setAfter(null));
+    return () => { gone = true; };
+  }, [payGroup, periodStart, live]);
 
   if (mode.kind === 'edit') {
     return (
@@ -201,6 +210,23 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
         ))}
         {live?.issues.map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
       </Panel>
+
+      {after && after.employees.length > 0 && (
+        <Panel title="Work after the cut-off">
+          <p className="text-sm text-slate-600">
+            Piece work done after {showDate(after.periodEnd)} is not in this payroll. It is paid on the next one. Total: <b className="tabular-nums">{peso(after.employees.reduce((sum, e) => sum + e.totalCents, 0))}</b>
+          </p>
+          {after.employees.map((e) => (
+            <section key={e.employeeId} aria-label={`${e.name} after the cut-off`} className="space-y-2 rounded-xl p-4 ring-1 ring-slate-200/70">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h3 className="font-medium">{e.name}</h3>
+                <span className="text-sm">Not covered <b className="tabular-nums">{peso(e.totalCents)}</b></span>
+              </div>
+              <PayDetails title="Work not covered"><Earnings lines={e.lines} /></PayDetails>
+            </section>
+          ))}
+        </Panel>
+      )}
 
       {Object.keys(skip).length > 0 && (
         <Panel title="Left out of this run">
