@@ -121,3 +121,25 @@ it('lets part of a wearer go out, then the rest (the owner\'s request, Nov 2026)
   expect((await accountant.post(`/api/docs/jo.release/${second}/cancel`, { reason: 'Recorded on the wrong day' }, idem())).statusCode).toBe(200);
   expect(await ben()).toMatchObject({ releasedQty: 1, releasedOn: null });
 });
+
+it('lets the finished pieces of a wearer go out while the rest are still being made (JO-000007, Nov 2026)', async () => {
+  const jo = await jobOrder();
+  // One of Ben's two pieces is packed.
+  const input = { jobOrderId: jo, stepId: PACKING, rows: [{ lineNo: 1, employeeId: w.packer, pieces: 1, wearers: [2] }] };
+  const p0 = await production.post('/api/docs/prd.entry/preview', { input });
+  const posted = await production.post('/api/docs/prd.entry/post', { input, expectedTotalCents: p0.json().totalCents }, idem());
+  expect(posted.statusCode, posted.body).toBe(200);
+  type Ready = StatusWearer & { readyQty?: number; releasedQty: number };
+  const ben = async () => ((await encoder.get(`/api/jo/orders/${jo}/status`)).json().lines[0].wearers as Ready[])[1]!;
+  expect(await ben()).toMatchObject({ ready: true, readyQty: 1, releasedQty: 0 });
+
+  // Both his pieces, or Ben alone (all that is left of him), is more than is finished.
+  expect(await issues(release(jo, [{ lineNo: 1, qty: 2, wearers: [2] }]))).toContain('WEARER_NOT_READY');
+  const body = release(jo, [{ lineNo: 1, qty: 1, wearers: [{ rowNo: 2, qty: 1 }] }]);
+  expect(await issues(body)).toEqual([]);
+  const p = await accountant.post('/api/jo/releases/preview', { release: body });
+  expect((await accountant.post('/api/jo/releases', { release: body, invoice: null, expectedTotalCents: p.json().release.totalCents }, idem())).statusCode).toBe(200);
+  // His finished piece is out; the other is still being made.
+  expect(await ben()).toMatchObject({ ready: false, readyQty: 1, releasedQty: 1, releasedOn: null });
+  expect(await issues(release(jo, [{ lineNo: 1, qty: 1, wearers: [2] }]))).toContain('WEARER_NOT_READY');
+});

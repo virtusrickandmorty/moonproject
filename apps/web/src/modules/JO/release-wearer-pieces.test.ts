@@ -29,3 +29,15 @@ describe('pieces by wearer on a release', () => {
     expect(errors('two')).toEqual(['Line 1: type the pieces going out for Bea Example, or untick them.']);
   });
 });
+
+describe('a wearer partly finished (JO-000007, Nov 2026)', () => {
+  // 41 pieces, 13 packed: those 13 may go out now; the rest are still being made.
+  const big = { lineNo: 1, description: 'Sample jacket', qty: 41, releasedQty: 0, leftQty: 41, wearers: [wearer(1, 'Dee Sample', 41, { readyQty: 13 })] };
+
+  it('ticks and sends the finished pieces only', () => {
+    expect(readyWearers([big], { 1: '13' })).toEqual({ wearers: { 1: [1] }, qtys: { 1: '13' } });
+    expect(releaseInput({ ...v, wearers: { 1: [1] } }, [big]).release.lines).toEqual([{ lineNo: 1, qty: 13, wearers: [{ rowNo: 1, qty: 13 }] }]);
+    expect(releaseInput({ ...v, wearers: { 1: [1] }, wearerPieces: { 1: { 1: '10' } } }, [big]).release.lines).toEqual([{ lineNo: 1, qty: 10, wearers: [{ rowNo: 1, qty: 10 }] }]);
+    expect(releaseInput({ ...v, wearers: { 1: [1] }, wearerPieces: { 1: { 1: '14' } } }, [big]).errors).toEqual(['Line 1: only 13 pieces of Dee Sample are finished and not out yet.']);
+  });
+});

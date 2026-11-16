@@ -223,10 +223,12 @@ export function allLeft(lines: JoStatus['lines']): Record<number, string> {
 
 /** A wearer's pieces not out yet (a wearer may go out in parts). */
 export const wearerLeft = (w: JoStatusWearer) => (w.releasedOn ? 0 : Math.max(0, w.qty - (w.releasedQty ?? 0)));
-/** The pieces going out for a wearer ticked: as typed, or all that is left of them. NaN when what is typed is not a number. */
+/** A wearer's pieces that may go out now: finished and not out yet (all not out yet when production does not say). */
+export const wearerReady = (w: JoStatusWearer) => (w.readyQty === undefined ? wearerLeft(w) : Math.max(0, Math.min(wearerLeft(w), w.readyQty - (w.releasedQty ?? 0))));
+/** The pieces going out for a wearer ticked: as typed, or all that may go out now. NaN when what is typed is not a number. */
 export function wearerNow(w: JoStatusWearer, typed: string | undefined): number {
   const t = (typed ?? '').trim();
-  return t === '' ? wearerLeft(w) : /^\d{1,5}$/.test(t) ? Number(t) : NaN;
+  return t === '' ? wearerReady(w) : /^\d{1,5}$/.test(t) ? Number(t) : NaN;
 }
 /** The line's pieces going out: the wearers ticked, each with their pieces now. */
 export function wearersQty(l: JoStatus['lines'][number], rows: number[], pieces: Record<number, string> | undefined): string {
@@ -241,10 +243,10 @@ export function readyWearers(lines: JoStatus['lines'], qtys: Record<number, stri
   const out = { ...qtys };
   for (const l of lines) {
     if (!qtys[l.lineNo] || !l.wearers?.some((w) => w.ready !== null)) continue;
-    const picked = l.wearers.filter((w) => w.ready && wearerLeft(w) > 0);
+    const picked = l.wearers.filter((w) => w.ready && wearerReady(w) > 0);
     if (picked.length === 0) continue;
     wearers[l.lineNo] = picked.map((w) => w.rowNo);
-    out[l.lineNo] = String(picked.reduce((n, w) => n + wearerLeft(w), 0));
+    out[l.lineNo] = String(picked.reduce((n, w) => n + wearerReady(w), 0));
   }
   return { wearers, qtys: out };
 }
@@ -270,10 +272,12 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
       let ok = true;
       for (const w of (l.wearers ?? []).filter((x) => rows.includes(x.rowNo))) {
         const n = wearerNow(w, v.wearerPieces?.[l.lineNo]?.[w.rowNo]);
-        const most = wearerLeft(w);
+        const most = wearerReady(w);
+        const word = (k: number) => `${k} ${k === 1 ? 'piece' : 'pieces'}`;
         if (!Number.isInteger(n) || n < 1) { ok = false; errors.push(`Line ${l.lineNo}: type the pieces going out for ${w.wearerName}, or untick them.`); }
-        else if (n > most) { ok = false; errors.push(`Line ${l.lineNo}: ${w.wearerName} has only ${most} ${most === 1 ? 'piece' : 'pieces'} left to release.`); }
-        else { picked.push(n === most ? w.rowNo : { rowNo: w.rowNo, qty: n }); qty += n; }
+        else if (n > most) { ok = false; errors.push(most < wearerLeft(w) ? `Line ${l.lineNo}: only ${word(most)} of ${w.wearerName} ${most === 1 ? 'is' : 'are'} finished and not out yet.` : `Line ${l.lineNo}: ${w.wearerName} has only ${word(most)} left to release.`); }
+        // A wearer alone takes all that is left of them; part of them goes with the pieces.
+        else { picked.push(n === wearerLeft(w) ? w.rowNo : { rowNo: w.rowNo, qty: n }); qty += n; }
       }
       if (ok && qty > 0) lines.push({ lineNo: l.lineNo, qty, wearers: picked.sort((a, b) => (typeof a === 'number' ? a : a.rowNo) - (typeof b === 'number' ? b : b.rowNo)) });
       continue;

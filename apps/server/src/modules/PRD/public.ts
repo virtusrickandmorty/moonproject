@@ -5,7 +5,7 @@ import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
 export { board } from './production.ts';
-import { coverage, lineDone, lineFinished, lineRoute, lineSetup, reworkFlow, routeDone, stepById, type Part } from './production.ts';
+import { coverage, lineDone, lineFinished, lineRoute, lineSetup, reworkFlow, routeDone, stepById, wearerPieces, type Part } from './production.ts';
 import { jobOrderRef, rosterOf } from '../JO/public.ts';
 import { lineState } from '../JO/public.ts';
 
@@ -57,6 +57,30 @@ export function finishedWearers(db: Db, jobOrderId: string, lineNo: number): Set
     covered.push(c.wearers);
   }
   return new Set(roster.map((w) => w.rowNo).filter((w) => covered.every((c) => c.has(w)) && !open.has(w)));
+}
+
+/**
+ * How many pieces of each wearer of a line went through every step (the owner's request, Nov 2026: JO-000007's wearers of
+ * 26 and 41 pieces were packed in parts, and the release form could tick none of them): all of them once every step is
+ * done, else their pieces done on the last needed step (the fewer of a set's two parts); none for a wearer sent back for
+ * rework. Null: not known by wearer, as finishedWearers.
+ */
+export function finishedWearerPieces(db: Db, jobOrderId: string, lineNo: number): Map<number, number> | null {
+  const line = lineState(db, jobOrderId).find((l) => l.lineNo === lineNo);
+  const route = lineRoute(db, jobOrderId, lineNo);
+  const roster = rosterOf(db, jobOrderId, lineNo);
+  if (!line || !route || roster.length === 0) return null;
+  const last = [...route].reverse().find((s) => s.status !== 'not_needed');
+  const parts: Part[] = last?.parts ? ['upper', 'lower'] : ['whole'];
+  const open = new Set(parts.flatMap((p) => [...reworkFlow(db, jobOrderId, lineNo, route, p).values()].flatMap((f) => f.wearers)));
+  if (routeDone(route) || !last) return new Map(roster.map((w) => [w.rowNo, open.has(w.rowNo) ? 0 : w.qty]));
+  const each: Map<number, { pieces: number }>[] = [];
+  for (const p of parts) {
+    const c = coverage(db, jobOrderId, lineNo, route, last, p, line.qty);
+    if (c.wearers === null || c.untracked > 0) return null;
+    each.push(wearerPieces(db, jobOrderId, lineNo, last.id, p));
+  }
+  return new Map(roster.map((w) => [w.rowNo, open.has(w.rowNo) ? 0 : Math.min(w.qty, ...each.map((m) => m.get(w.rowNo)?.pieces ?? 0))]));
 }
 
 /**

@@ -12,7 +12,7 @@ import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom
 import { MODE_WORDS, depositModeOn, modeKeptIssue } from '../COL/public.ts';
 import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, rosterOf, stagesAll } from './public.ts';
-import { finishedWearers, lineProduction } from '../PRD/public.ts';
+import { finishedWearerPieces, lineProduction } from '../PRD/public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
 import { OUT_FOR_DELIVERY, isOutForDelivery, recordReceived, releasesWithReceiver } from './received.ts';
 import { joListRoutes } from './list.ts';
@@ -106,15 +106,18 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     const lines = lineState(db, req.params.id).map(({ lineNo, kind, description, qty, releasedQty }) => {
       const readyQty = may.get(lineNo) ?? 0;
       const roster = rosterOf(db, req.params.id, lineNo);
-      const finished = roster.length > 0 ? finishedWearers(db, req.params.id, lineNo) : null;
+      const finished = roster.length > 0 ? finishedWearerPieces(db, req.params.id, lineNo) : null;
       const gone = out.get(lineNo);
+      const done = (rowNo: number) => finished?.get(rowNo) ?? 0;
       // releasedQty: their pieces out so far (a wearer may go out in parts; the owner's request, Nov 2026); releasedOn: the
       // releases they went out on, once all their pieces are out.
       const wearers = roster.map((w) => {
         const o = gone?.get(w.rowNo);
         const releasedQty = Math.min(w.qty, o?.qty ?? 0);
         return { rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: w.qty,
-          releasedQty, releasedOn: o && releasedQty >= w.qty ? o.numbers.join(', ') : null, ...(o && releasedQty < w.qty ? { partlyOn: o.numbers.join(', ') } : {}), ready: finished ? finished.has(w.rowNo) : null };
+          releasedQty, releasedOn: o && releasedQty >= w.qty ? o.numbers.join(', ') : null, ...(o && releasedQty < w.qty ? { partlyOn: o.numbers.join(', ') } : {}),
+          // ready: all their pieces finished, or some finished and not out yet; readyQty: their pieces finished (the owner's request, Nov 2026).
+          ready: finished ? done(w.rowNo) >= w.qty || done(w.rowNo) > releasedQty : null, ...(finished ? { readyQty: done(w.rowNo) } : {}) };
       });
       const awaitingSteps = kind !== 'ready_made' && made.get(lineNo) === 'none';
       return { lineNo, description, qty, releasedQty, leftQty: qty - releasedQty, ready: readyQty > 0 && !awaitingSteps, readyQty: awaitingSteps ? 0 : readyQty, awaitingSteps, ...(wearers.length ? { wearers } : {}) };
