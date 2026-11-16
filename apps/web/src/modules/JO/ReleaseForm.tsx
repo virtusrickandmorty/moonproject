@@ -4,6 +4,7 @@
  * reason when it goes out before it is ready. The booklet invoice number is recorded in the same action, unless the
  * invoice is to follow. The balance due and "write these on the booklet" come from the server's preview. The job order's
  * earlier releases with no invoice yet are ticked to go on the same invoice (the owner's request, Nov 2026).
+ * A wearer with more than one piece takes the pieces going out now, so part of them can go (the owner's request, Nov 2026).
  * A recorded release is corrected by cancelling it and releasing again, so this form has no Edit.
  */
 import { Fragment, useEffect, useMemo, useState } from 'react';
@@ -15,7 +16,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, Figures, useLive } from '../COL/parts.tsx';
 import { AlsoOnInvoice, Booklet, JoPicker } from './parts.tsx';
-import { nothingToCharge, ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, type ReleaseValues } from './forms.ts';
+import { nothingToCharge, ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, wearerLeft, wearersQty, type ReleaseValues } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
 /** Ticked to start with: only the lines that may go out now (the owner's request, Oct 2026: what is not ready is greyed). */
@@ -138,9 +139,14 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                   const ticked = !!typedQty.trim() && typedQty.trim() !== '0';
                   // The line's wearer list (the owner's request, Oct 2026): tick who goes out; the pieces follow the ticks.
                   const mine = v.wearers[l.lineNo] ?? [];
-                  const tick = (next: number[]) => set({ wearers: { ...v.wearers, [l.lineNo]: next },
-                    qtys: { ...v.qtys, [l.lineNo]: next.length ? String((l.wearers ?? []).filter((w) => next.includes(w.rowNo)).reduce((n, w) => n + w.qty, 0)) : '' } });
-                  const free = (l.wearers ?? []).filter((w) => !w.releasedOn);
+                  const typedPieces = v.wearerPieces?.[l.lineNo] ?? {};
+                  const tick = (next: number[]) => set({ wearers: { ...v.wearers, [l.lineNo]: next }, qtys: { ...v.qtys, [l.lineNo]: wearersQty(l, next, typedPieces) } });
+                  // Part of a wearer's pieces (the owner's request, Nov 2026): the line's pieces follow what is typed.
+                  const setPieces = (rowNo: number, text: string) => {
+                    const next = { ...typedPieces, [rowNo]: text };
+                    set({ wearerPieces: { ...v.wearerPieces, [l.lineNo]: next }, qtys: { ...v.qtys, [l.lineNo]: wearersQty(l, mine, next) } });
+                  };
+                  const free = (l.wearers ?? []).filter((w) => wearerLeft(w) > 0);
                   const readyFree = free.filter((w) => w.ready);
                   // Only what is ready can be ticked (the owner's request, Oct 2026); a line or wearer still being made is greyed.
                   const closedLine = l.leftQty === 0 || l.ready === false;
@@ -173,18 +179,30 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                               {mine.length > 0 && <Button onClick={() => tick([])}>Untick all</Button>}
                             </div>
                             <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
-                              {(l.wearers ?? []).map((w) => (
-                                <li key={w.rowNo}>
-                                  <label className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${w.releasedOn || w.ready === false ? 'text-slate-400' : 'hover:bg-white'}`}>
-                                    <input type="checkbox" aria-label={`Release ${w.wearerName}`} disabled={!!w.releasedOn || w.ready === false || l.ready === false} checked={!!w.releasedOn || mine.includes(w.rowNo)}
+                              {(l.wearers ?? []).map((w) => {
+                                const left = wearerLeft(w);
+                                const on = mine.includes(w.rowNo);
+                                const outSoFar = w.releasedQty ?? 0;
+                                return (
+                                <li key={w.rowNo} className="flex items-center gap-1">
+                                  <label className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-sm ${w.releasedOn || w.ready === false ? 'text-slate-400' : 'hover:bg-white'}`}>
+                                    <input type="checkbox" aria-label={`Release ${w.wearerName}`} disabled={!!w.releasedOn || w.ready === false || l.ready === false} checked={!!w.releasedOn || on}
                                       onChange={(e) => tick(e.target.checked ? [...mine, w.rowNo] : mine.filter((x) => x !== w.rowNo))} />
-                                    <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
+                                    <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}{!w.releasedOn && outSoFar > 0 ? ` · ${outSoFar} out on ${w.partlyOn ?? 'an earlier release'}` : ''}</span></span>
                                     {w.releasedOn ? <span className="text-xs">out on {w.releasedOn}</span>
                                       : w.ready === true ? <span className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">ready</span>
                                       : w.ready === false ? <span className="rounded bg-amber-100 px-1 text-xs text-amber-900">being made</span> : null}
                                   </label>
+                                  {on && left > 1 && (
+                                    <span className="flex shrink-0 items-center gap-1 text-xs text-slate-500">
+                                      <input aria-label={`Pieces of ${w.wearerName}`} inputMode="numeric" className={`${money} w-14 px-1 py-0.5`}
+                                        value={typedPieces[w.rowNo] ?? String(left)} onChange={(e) => setPieces(w.rowNo, e.target.value)} />
+                                      of {left}
+                                    </span>
+                                  )}
                                 </li>
-                              ))}
+                                );
+                              })}
                             </ul>
                           </fieldset>
                         </td>

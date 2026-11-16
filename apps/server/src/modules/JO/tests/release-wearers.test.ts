@@ -82,3 +82,42 @@ it('says a made item has no production steps yet, so the release form greys it',
   expect((await production.post(`/api/prd/jobs/${r.json().id}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard' })).statusCode).toBe(200);
   expect((await status())[0]).toEqual([1, false, false]); // routed, still being made
 });
+
+it('lets part of a wearer go out, then the rest (the owner\'s request, Nov 2026)', async () => {
+  const jo = await jobOrder();
+  // Ben (2 pieces) and Dee are packed too.
+  const input = { jobOrderId: jo, stepId: PACKING, rows: [{ lineNo: 1, employeeId: w.packer, pieces: 3, wearers: [2, 4] }] };
+  const p0 = await production.post('/api/docs/prd.entry/preview', { input });
+  expect((await production.post('/api/docs/prd.entry/post', { input, expectedTotalCents: p0.json().totalCents }, idem())).statusCode).toBe(200);
+  const post = async (lines: object[], invoiceNumber: string | null) => {
+    const body = release(jo, lines);
+    const p = await accountant.post('/api/jo/releases/preview', { release: body });
+    const rel = await accountant.post('/api/jo/releases', { release: body, invoice: invoiceNumber ? { invoiceNumber } : null, expectedTotalCents: p.json().release.totalCents }, idem());
+    expect(rel.statusCode, rel.body).toBe(200);
+    return rel.json().release.id as string;
+  };
+  type Partly = StatusWearer & { releasedQty: number; partlyOn?: string };
+  const ben = async () => ((await encoder.get(`/api/jo/orders/${jo}/status`)).json().lines[0].wearers as Partly[])[1]!;
+
+  // More than Ben has is refused; the pieces must add up.
+  expect(await issues(release(jo, [{ lineNo: 1, qty: 3, wearers: [{ rowNo: 2, qty: 3 }] }]))).toContain('WEARER_OVER');
+  expect(await issues(release(jo, [{ lineNo: 1, qty: 2, wearers: [1, { rowNo: 2, qty: 2 }] }]))).toContain('WEARERS_QTY');
+
+  // One of Ben's two pieces goes out with Ana.
+  const first = await post([{ lineNo: 1, qty: 2, wearers: [1, { rowNo: 2, qty: 1 }] }], '0802');
+  const d = (await accountant.get(`/api/docs/jo.release/${first}`)).json();
+  expect(d.input.lines).toEqual([{ lineNo: 1, qty: 2, wearers: [1, { rowNo: 2, qty: 1 }] }]);
+  expect(d.doc.lines[0].wearers.map((x: { wearerName: string; qty: number; ofQty?: number }) => [x.wearerName, x.qty, x.ofQty])).toEqual([['Ana Reyes', 1, undefined], ['Ben Cruz', 1, 2]]);
+  expect(await ben()).toMatchObject({ releasedQty: 1, releasedOn: null, partlyOn: d.header.number });
+  expect(await issues(release(jo, [{ lineNo: 1, qty: 2, wearers: [{ rowNo: 2, qty: 2 }] }]))).toContain('WEARER_OVER');
+
+  // Ben alone now takes his last piece; then he is out on both releases.
+  const second = await post([{ lineNo: 1, qty: 1, wearers: [2] }], null); // invoice to follow, so it cancels at once
+  const n2 = (await accountant.get(`/api/docs/jo.release/${second}`)).json().header.number as string;
+  expect(await ben()).toMatchObject({ releasedQty: 2, releasedOn: `${d.header.number}, ${n2}` });
+  expect(await issues(release(jo, [{ lineNo: 1, qty: 1, wearers: [2] }]))).toContain('WEARER_RELEASED');
+
+  // Cancelling the second release frees his last piece again.
+  expect((await accountant.post(`/api/docs/jo.release/${second}/cancel`, { reason: 'Recorded on the wrong day' }, idem())).statusCode).toBe(200);
+  expect(await ben()).toMatchObject({ releasedQty: 1, releasedOn: null });
+});

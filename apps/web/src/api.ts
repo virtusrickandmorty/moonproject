@@ -301,6 +301,8 @@ export interface Forfeitable {
 }
 /** GET /api/col/unapplied-deposits: customers with deposits not on a job order, oldest payment first. */
 export interface UnappliedDepositRow { customerId: string; customerName: string; customerCode: string; heldCents: number; maturedCents: number; firstPaid: string | null; maturesOn: string | null; nextMatures: string | null }
+/** A wearer on the release form: a wearer may go out in parts (the owner's request, Nov 2026). */
+export interface JoStatusWearer { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedQty?: number; releasedOn: string | null; partlyOn?: string; ready: boolean | null }
 /** GET /api/jo/orders/:id/status, the parts the JO view shows: all derived on the server (NR-2). */
 export interface JoStatus {
   /** Made for stock (TPL, the website shop): where its finished pieces go, instead of a release slip. */
@@ -311,9 +313,10 @@ export interface JoStatus {
   money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number; requiredDownpaymentCents: number };
   /** ready: the line may go out now (its production is done, or the whole job order is Ready). */
   /** readyQty: pieces that may go out now (finished every step); ready: some may. */
-  /** wearers: the line's wearer list; releasedOn: the release it went out on; ready: through every step (null: not known by wearer). */
+  /** wearers: the line's wearer list; releasedQty: their pieces out so far; releasedOn: the releases they went out on, once all are out;
+   *  partlyOn: the releases that took part of them; ready: through every step (null: not known by wearer). */
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean; readyQty?: number; awaitingSteps?: boolean;
-    wearers?: { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedOn: string | null; ready: boolean | null }[] }[];
+    wearers?: JoStatusWearer[] }[];
   awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
   /** Its recorded releases and who got them: claimed in person (the ID seen), or sent for delivery (who received it, once typed). */
   releases?: ({ id: string; number: string; date: string; pieces: number } & (
