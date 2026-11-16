@@ -178,7 +178,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                               {readyFree.length > 0 && <Button onClick={() => tick(readyFree.map((w) => w.rowNo))}>Tick all ready ({readyFree.length})</Button>}
                               {mine.length > 0 && <Button onClick={() => tick([])}>Untick all</Button>}
                             </div>
-                            <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                            {/* Two columns at most when wearers take a pieces box, so their names still show. */}
+                            <ul className={`grid gap-1 ${free.some((w) => wearerReady(w) > 1) ? 'lg:grid-cols-2' : 'sm:grid-cols-2 lg:grid-cols-3'}`}>
                               {(l.wearers ?? []).map((w) => {
                                 const left = wearerReady(w);
                                 const on = mine.includes(w.rowNo);
@@ -198,7 +199,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                                   </label>
                                   {on && left > 1 && (
                                     <span className="flex shrink-0 items-center gap-1 text-xs text-slate-500">
-                                      <input aria-label={`Pieces of ${w.wearerName}`} inputMode="numeric" className={`${money} w-14 px-1 py-0.5`}
+                                      <input aria-label={`Pieces of ${w.wearerName}`} inputMode="numeric" className="w-16 rounded-md border border-slate-300 bg-white px-1.5 py-1 text-right text-sm tabular-nums text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                                         value={typedPieces[w.rowNo] ?? String(left)} onChange={(e) => setPieces(w.rowNo, e.target.value)} />
                                       of {left}
                                     </span>
