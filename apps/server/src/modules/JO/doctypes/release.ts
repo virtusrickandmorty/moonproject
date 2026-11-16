@@ -52,7 +52,11 @@ export const releaseInput = z
   .object({
     jobOrderId: z.uuid(),
     // wearers: on a line with a wearer list, who goes out (roster rows); the qty is then their pieces (the owner's request, Oct 2026).
-    lines: z.array(z.object({ lineNo: z.number().int().min(1).max(50), qty: z.number().int().min(1).max(10_000), wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional() }).strict()).min(1).max(50),
+    // A roster row alone takes all that is left of that wearer; { rowNo, qty } takes part of them (the owner's request, Nov 2026).
+    lines: z.array(z.object({ lineNo: z.number().int().min(1).max(50), qty: z.number().int().min(1).max(10_000), wearers: z.array(z.union([
+      z.number().int().min(1).max(1000),
+      z.object({ rowNo: z.number().int().min(1).max(1000), qty: z.number().int().min(1).max(10_000) }).strict(),
+    ])).min(1).max(1000).optional() }).strict()).min(1).max(50),
     claimedBy: text(120),
     idSeen: z.enum(ID_SEEN), // the type only; no ID number is stored
     forDelivery: z.literal(true).optional(), // sent out, nobody has claimed it yet: the slip leaves the receiver blank to sign (the owner's request, Nov 2026)
@@ -64,20 +68,35 @@ export const releaseInput = z
 export type ReleaseInput = z.infer<typeof releaseInput>;
 
 export type LineKind = 'made_to_order' | 'service' | 'ready_made';
-/** A wearer going out, as printed on the slip. */
-export interface ReleasedWearer { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number }
+/** A wearer going out, as printed on the slip: qty is the pieces going out now; ofQty, the wearer's pieces, when only part of them goes. */
+export interface ReleasedWearer { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; ofQty?: number }
 export interface ReleaseLine { lineNo: number; qty: number; kind: LineKind; description: string; listCents: number; discountCents: number; amountCents: number; wearers?: ReleasedWearer[] }
 
-/** The wearers of each line already out on recorded (not cancelled) releases: line → roster row → release number. */
-export function releasedWearers(db: Db, jobOrderId: string): Map<number, Map<number, string>> {
-  const out = new Map<number, Map<number, string>>();
-  const rows = db.prepare(`SELECT w.line_no AS lineNo, w.roster_row_no AS rowNo, d.number FROM jo_release_wearers w JOIN jo_releases r ON r.document_id = w.document_id
-    JOIN documents d ON d.id = r.document_id WHERE r.job_order_id = ? AND d.status = 'posted'`).all(jobOrderId) as { lineNo: number; rowNo: number; number: string }[];
-  for (const r of rows) out.set(r.lineNo, (out.get(r.lineNo) ?? new Map()).set(r.rowNo, r.number));
+/** A wearer's pieces already out on recorded (not cancelled) releases, and the releases they went out on. */
+export interface WearerOut { qty: number; numbers: string[] }
+/**
+ * The wearers of each line already out on recorded (not cancelled) releases: line → roster row → pieces and releases. A
+ * wearer may go out in parts (the owner's request, Nov 2026); a row recorded before that (no qty) took all their pieces.
+ */
+export function releasedWearers(db: Db, jobOrderId: string): Map<number, Map<number, WearerOut>> {
+  const out = new Map<number, Map<number, WearerOut>>();
+  const rows = db.prepare(`SELECT w.line_no AS lineNo, w.roster_row_no AS rowNo, COALESCE(w.qty, ro.qty, 0) AS qty, d.number FROM jo_release_wearers w
+    JOIN jo_releases r ON r.document_id = w.document_id JOIN documents d ON d.id = r.document_id
+    LEFT JOIN jo_roster ro ON ro.document_id = r.job_order_id AND ro.line_no = w.line_no AND ro.row_no = w.roster_row_no
+    WHERE r.job_order_id = ? AND d.status = 'posted' ORDER BY d.posted_at, d.number`).all(jobOrderId) as { lineNo: number; rowNo: number; qty: number; number: string }[];
+  for (const r of rows) {
+    const line = out.get(r.lineNo) ?? new Map<number, WearerOut>();
+    const w = line.get(r.rowNo) ?? { qty: 0, numbers: [] };
+    line.set(r.rowNo, { qty: w.qty + r.qty, numbers: [...w.numbers, r.number] });
+    out.set(r.lineNo, line);
+  }
   return out;
 }
-const asReleased = (w: { rowNo: number; wearerName: string; size: string | null; lowerSize?: string | null; jerseyNumber: string | null; qty: number }): ReleasedWearer =>
-  ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: w.qty });
+/** A wearer picked on a release: a roster row alone (all that is left of them) or with the pieces going out. */
+type PickedWearer = number | { rowNo: number; qty: number };
+const rowOf = (p: PickedWearer) => (typeof p === 'number' ? p : p.rowNo);
+const asReleased = (w: { rowNo: number; wearerName: string; size: string | null; lowerSize?: string | null; jerseyNumber: string | null; qty: number }, now = w.qty): ReleasedWearer =>
+  ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: now, ...(now !== w.qty ? { ofQty: w.qty } : {}) });
 export interface Release extends Omit<ReleaseInput, 'lines'> {
   /** Typed afterwards from the signed slip, on a release for delivery (received.ts). */
   receivedBy?: string; receivedOn?: string;
@@ -120,6 +139,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
   compute(input, ctx) {
     const jo = jobOrderRef(ctx.db, input.jobOrderId);
     const state = new Map(lineState(ctx.db, input.jobOrderId).map((l) => [l.lineNo, l]));
+    const released = input.lines.some((l) => l.wearers) ? releasedWearers(ctx.db, input.jobOrderId) : new Map<number, Map<number, WearerOut>>();
     const lines = input.lines.map((l): ReleaseLine => {
       const s = state.get(l.lineNo);
       if (!s) return { lineNo: l.lineNo, qty: l.qty, kind: 'made_to_order', description: '?', listCents: 0, discountCents: 0, amountCents: 0 }; // refused in validate
@@ -130,7 +150,13 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       const discountCents = after >= s.qty ? left : Math.min(Math.max(0, share), left, listCents);
       const { wearers: picked, ...rest } = l;
       const roster = picked ? new Map(rosterOf(ctx.db, input.jobOrderId, l.lineNo).map((w) => [w.rowNo, w])) : null;
-      const wearers = picked && roster ? picked.map((n) => { const w = roster.get(n); return w ? asReleased(w) : { rowNo: n, wearerName: '?', size: null, jerseyNumber: null, qty: 0 }; }) : undefined; // unknown: refused in validate
+      const out = picked ? released.get(l.lineNo) : undefined;
+      // A roster row alone takes what is left of that wearer; with a qty, those pieces. Unknown wearers are refused in validate.
+      const wearers = picked && roster ? picked.map((p) => {
+        const w = roster.get(rowOf(p));
+        if (!w) return { rowNo: rowOf(p), wearerName: '?', size: null, jerseyNumber: null, qty: typeof p === 'number' ? 0 : p.qty };
+        return asReleased(w, typeof p === 'number' ? Math.max(0, w.qty - (out?.get(w.rowNo)?.qty ?? 0)) : p.qty);
+      }) : undefined;
       return { ...rest, kind: s.kind, description: s.description, listCents, discountCents, amountCents: listCents - discountCents, ...(wearers ? { wearers } : {}) };
     });
     return {
@@ -165,18 +191,26 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       else if (l.qty > left) error(`lines.${i}.qty`, 'OVER_RELEASE', left > 0 ? `Line ${l.lineNo}: only ${pieces(left)} of ${s.qty} are left to release.` : `Line ${l.lineNo} is already fully released.`);
       else if (l.amountCents < 0) error(`lines.${i}.qty`, 'AMOUNT', `Line ${l.lineNo}: the discount is more than the pieces released. Release the rest of the line together.`);
       const picked = l.wearers?.map((w) => w.rowNo);
-      if (s && picked) {
-        // Each wearer goes out once; the pieces are theirs.
+      if (s && l.wearers && picked) {
+        // Each wearer's pieces go out once, all together or in parts (the owner's request, Nov 2026); the line's pieces are theirs.
         const roster = new Map(rosterOf(ctx.db, jo.id, l.lineNo).map((w) => [w.rowNo, w]));
-        const out = releasedWearers(ctx.db, jo.id).get(l.lineNo) ?? new Map<number, string>();
+        const out = releasedWearers(ctx.db, jo.id).get(l.lineNo) ?? new Map<number, WearerOut>();
         const finished = doc.overrideReason ? null : finishedWearers(ctx.db, jo.id, l.lineNo); // the owner may release early, with a reason
         let qty = 0;
-        for (const n of new Set(picked)) {
+        const done = new Set<number>();
+        for (const p of l.wearers) {
+          const n = p.rowNo;
+          if (done.has(n)) continue;
+          done.add(n);
           const w = roster.get(n);
           if (!w) { error(`lines.${i}.wearers`, 'WEARER', `Line ${l.lineNo} has no wearer ${n}.`); continue; }
-          if (out.has(n)) error(`lines.${i}.wearers`, 'WEARER_RELEASED', `Line ${l.lineNo}: ${w.wearerName} already went out on ${out.get(n)}.`);
+          const gone = out.get(n);
+          const left = w.qty - (gone?.qty ?? 0);
+          if (left <= 0) error(`lines.${i}.wearers`, 'WEARER_RELEASED', `Line ${l.lineNo}: ${w.wearerName} already went out on ${gone!.numbers.join(', ')}.`);
+          else if (p.qty > left) error(`lines.${i}.wearers`, 'WEARER_OVER', `Line ${l.lineNo}: ${w.wearerName} has only ${pieces(left)} left to release${gone ? ` (${gone.qty} of ${w.qty} went out on ${gone.numbers.join(', ')})` : ''}.`);
+          else if (p.qty < 1) error(`lines.${i}.wearers`, 'WEARER_QTY', `Line ${l.lineNo}: type the pieces going out for ${w.wearerName}.`);
           else if (finished && !finished.has(n)) error(`lines.${i}.wearers`, 'WEARER_NOT_READY', `Line ${l.lineNo}: ${w.wearerName} is not finished yet.`);
-          qty += w.qty;
+          qty += p.qty;
         }
         if (picked.length !== new Set(picked).size) error(`lines.${i}.wearers`, 'WEARER_TWICE', `Line ${l.lineNo}: a wearer is ticked twice.`);
         if (qty !== l.qty) error(`lines.${i}.qty`, 'WEARERS_QTY', `Line ${l.lineNo}: the wearers ticked are ${pieces(qty)}, so ${qty} go out, not ${l.qty}.`);
@@ -221,10 +255,10 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(h.documentId, doc.jobOrderId, doc.claimedBy, doc.idSeen, doc.balanceDueCents, doc.creditNote ?? null, doc.creditDueDate ?? null, doc.overrideReason ?? null, doc.forDelivery ? 1 : 0);
     const line = db.prepare('INSERT INTO jo_release_lines (document_id, line_no, qty, list_cents, discount_cents, amount_cents) VALUES (?, ?, ?, ?, ?, ?)');
-    const wearer = db.prepare('INSERT INTO jo_release_wearers (document_id, line_no, roster_row_no) VALUES (?, ?, ?)');
+    const wearer = db.prepare('INSERT INTO jo_release_wearers (document_id, line_no, roster_row_no, qty) VALUES (?, ?, ?, ?)');
     for (const l of doc.lines) {
       line.run(h.documentId, l.lineNo, l.qty, l.listCents, l.discountCents, l.amountCents);
-      for (const w of l.wearers ?? []) wearer.run(h.documentId, l.lineNo, w.rowNo);
+      for (const w of l.wearers ?? []) wearer.run(h.documentId, l.lineNo, w.rowNo, w.qty);
     }
     // Counts this release (its documents row is in). Not Released while a delivery's receiver is not typed (received.ts).
     moveTo(db, doc.jobOrderId, stageAfterRelease(db, doc.jobOrderId), h.number, postedBy(db, h));
@@ -265,12 +299,13 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
          WHERE rl.document_id = ? ORDER BY rl.rowid`,
       )
       .all(documentId) as ReleaseLine[];
-    const ticked = db.prepare('SELECT roster_row_no FROM jo_release_wearers WHERE document_id = ? AND line_no = ? ORDER BY roster_row_no').pluck();
+    const ticked = db.prepare('SELECT roster_row_no AS rowNo, qty FROM jo_release_wearers WHERE document_id = ? AND line_no = ? ORDER BY roster_row_no');
     for (const l of lines) {
-      const rows = ticked.all(documentId, l.lineNo) as number[];
+      const rows = ticked.all(documentId, l.lineNo) as { rowNo: number; qty: number | null }[];
       if (rows.length === 0) continue;
       const roster = new Map(rosterOf(db, r.jobOrderId, l.lineNo).map((w) => [w.rowNo, w]));
-      l.wearers = rows.map((n) => roster.get(n)).filter((w) => !!w).map(asReleased);
+      // A row recorded before wearers went out in parts (no qty) took all their pieces.
+      l.wearers = rows.flatMap((x) => { const w = roster.get(x.rowNo); return w ? [asReleased(w, x.qty ?? w.qty)] : []; });
     }
     const jo = jobOrderRef(db, r.jobOrderId)!;
     const optional = Object.fromEntries(['creditNote', 'creditDueDate', 'creditDueInDays', 'overrideReason'].filter((k) => r[k] !== null).map((k) => [k, r[k]]));
@@ -294,7 +329,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
     const { jobOrderId, claimedBy, idSeen, forDelivery, creditNote, creditDueInDays, overrideReason } = doc;
     return {
       jobOrderId,
-      lines: doc.lines.map(({ lineNo, qty, wearers }) => ({ lineNo, qty, ...(wearers?.length ? { wearers: wearers.map((w) => w.rowNo) } : {}) })),
+      lines: doc.lines.map(({ lineNo, qty, wearers }) => ({ lineNo, qty, ...(wearers?.length ? { wearers: wearers.map((w) => (w.ofQty === undefined ? w.rowNo : { rowNo: w.rowNo, qty: w.qty })) } : {}) })),
       claimedBy,
       idSeen,
       ...(forDelivery ? { forDelivery } : {}),

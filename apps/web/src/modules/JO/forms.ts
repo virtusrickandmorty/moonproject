@@ -4,7 +4,7 @@
  * tested without a browser; the server works out every figure and checks everything again.
  */
 import { formatPesos, manilaDate, saysSet } from '@moonproject/shared';
-import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, WearerPick } from '../../api.ts';
+import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, JoStatusWearer, WearerPick } from '../../api.ts';
 import type { jobOrderPrefill } from '../QUO/quotation.ts';
 import { cents } from '../COL/money.ts';
 import { discountCentsOf, discountOf, discountProblem, type DiscountMode } from '../../components/discount.tsx';
@@ -191,6 +191,8 @@ export interface ReleaseValues {
   qtys: Record<number, string>;
   /** On a line with a wearer list: who goes out (roster rows); the pieces are then theirs. */
   wearers: Record<number, number[]>;
+  /** The pieces typed for a wearer ticked, by line then roster row; none typed: all that is left of them (the owner's request, Nov 2026). */
+  wearerPieces: Record<number, Record<number, string>>;
   claimedBy: string; idSeen: IdSeen | ''; creditNote: string; creditDueInDays: string; overrideReason: string;
   invoiceNumber: string; invoiceToFollow: boolean; invoiceNote: string;
   /** Sent out with nobody claiming it yet: the slip leaves the receiver blank, to sign by hand. */
@@ -204,7 +206,7 @@ export const nothingToCharge = (jobOrderCents: number | undefined, previewCents:
 /** What a release for delivery keeps as who claimed it, until someone signs the slip. */
 export const FOR_DELIVERY = 'For delivery';
 export const emptyRelease = (jobOrderId = ''): ReleaseValues => ({
-  jobOrderId, qtys: {}, wearers: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '', forDelivery: false,
+  jobOrderId, qtys: {}, wearers: {}, wearerPieces: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '', forDelivery: false,
 });
 /** Everything left on each line, ticked. */
 /**
@@ -219,21 +221,37 @@ export function allLeft(lines: JoStatus['lines']): Record<number, string> {
   return ready.length > 0 ? Object.fromEntries(ready.map((l) => [l.lineNo, now(l)])) : Object.fromEntries(left.map((l) => [l.lineNo, String(l.leftQty)]));
 }
 
-/** The wearers ticked to start with: on each line ticked, those ready (through every step) and not out yet. */
+/** A wearer's pieces not out yet (a wearer may go out in parts). */
+export const wearerLeft = (w: JoStatusWearer) => (w.releasedOn ? 0 : Math.max(0, w.qty - (w.releasedQty ?? 0)));
+/** The pieces going out for a wearer ticked: as typed, or all that is left of them. NaN when what is typed is not a number. */
+export function wearerNow(w: JoStatusWearer, typed: string | undefined): number {
+  const t = (typed ?? '').trim();
+  return t === '' ? wearerLeft(w) : /^\d{1,5}$/.test(t) ? Number(t) : NaN;
+}
+/** The line's pieces going out: the wearers ticked, each with their pieces now. */
+export function wearersQty(l: JoStatus['lines'][number], rows: number[], pieces: Record<number, string> | undefined): string {
+  if (rows.length === 0) return '';
+  const n = (l.wearers ?? []).filter((w) => rows.includes(w.rowNo)).reduce((s, w) => s + (wearerNow(w, pieces?.[w.rowNo]) || 0), 0);
+  return String(n);
+}
+
+/** The wearers ticked to start with: on each line ticked, those ready (through every step) with pieces not out yet. */
 export function readyWearers(lines: JoStatus['lines'], qtys: Record<number, string>): { wearers: Record<number, number[]>; qtys: Record<number, string> } {
   const wearers: Record<number, number[]> = {};
   const out = { ...qtys };
   for (const l of lines) {
     if (!qtys[l.lineNo] || !l.wearers?.some((w) => w.ready !== null)) continue;
-    const picked = l.wearers.filter((w) => w.ready && !w.releasedOn);
+    const picked = l.wearers.filter((w) => w.ready && wearerLeft(w) > 0);
     if (picked.length === 0) continue;
     wearers[l.lineNo] = picked.map((w) => w.rowNo);
-    out[l.lineNo] = String(picked.reduce((n, w) => n + w.qty, 0));
+    out[l.lineNo] = String(picked.reduce((n, w) => n + wearerLeft(w), 0));
   }
   return { wearers, qtys: out };
 }
 
-export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number; wearers?: number[] }[]; claimedBy: string; idSeen: IdSeen; forDelivery?: true; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
+/** A wearer on a release: a roster row alone takes all that is left of them; with a qty, those pieces. */
+export type ReleaseWearer = number | { rowNo: number; qty: number };
+export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number; wearers?: ReleaseWearer[] }[]; claimedBy: string; idSeen: IdSeen; forDelivery?: true; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
 
 /**
  * Typed values -> the release, its invoice (null = invoice to follow), and what to fix first (`releaseErrors`: the release
@@ -242,13 +260,29 @@ export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty
 export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { release: ReleaseInput; invoice: { invoiceNumber: string; note?: string } | null; errors: string[]; releaseErrors: string[] } {
   const errors: string[] = [];
   if (!v.jobOrderId) errors.push('Pick the job order.');
-  const lines: { lineNo: number; qty: number; wearers?: number[] }[] = [];
+  const lines: { lineNo: number; qty: number; wearers?: ReleaseWearer[] }[] = [];
   for (const l of left) {
+    const rows = v.wearers?.[l.lineNo] ?? [];
+    if (rows.length > 0) {
+      // Wearers ticked: the pieces are theirs, each as typed (part of them) or all that is left of them.
+      const picked: ReleaseWearer[] = [];
+      let qty = 0;
+      let ok = true;
+      for (const w of (l.wearers ?? []).filter((x) => rows.includes(x.rowNo))) {
+        const n = wearerNow(w, v.wearerPieces?.[l.lineNo]?.[w.rowNo]);
+        const most = wearerLeft(w);
+        if (!Number.isInteger(n) || n < 1) { ok = false; errors.push(`Line ${l.lineNo}: type the pieces going out for ${w.wearerName}, or untick them.`); }
+        else if (n > most) { ok = false; errors.push(`Line ${l.lineNo}: ${w.wearerName} has only ${most} ${most === 1 ? 'piece' : 'pieces'} left to release.`); }
+        else { picked.push(n === most ? w.rowNo : { rowNo: w.rowNo, qty: n }); qty += n; }
+      }
+      if (ok && qty > 0) lines.push({ lineNo: l.lineNo, qty, wearers: picked.sort((a, b) => (typeof a === 'number' ? a : a.rowNo) - (typeof b === 'number' ? b : b.rowNo)) });
+      continue;
+    }
     const typed = (v.qtys[l.lineNo] ?? '').trim();
     if (!typed || typed === '0') continue;
     if (!/^[1-9]\d{0,4}$/.test(typed)) errors.push(`Line ${l.lineNo}: type the pieces as a whole number.`);
     else if (Number(typed) > l.leftQty) errors.push(l.leftQty > 0 ? `Line ${l.lineNo}: only ${l.leftQty} of ${l.qty} pieces are left to release.` : `Line ${l.lineNo} is already fully released.`);
-    else lines.push({ lineNo: l.lineNo, qty: Number(typed), ...((v.wearers?.[l.lineNo]?.length ?? 0) > 0 ? { wearers: [...v.wearers[l.lineNo]!].sort((a, b) => a - b) } : {}) });
+    else lines.push({ lineNo: l.lineNo, qty: Number(typed) });
   }
   if (v.jobOrderId && lines.length === 0 && errors.length === 0) errors.push('Tick the lines and pieces going out.');
   if (!v.forDelivery && !v.claimedBy.trim()) errors.push('Type who claimed it, or tick "For delivery".');

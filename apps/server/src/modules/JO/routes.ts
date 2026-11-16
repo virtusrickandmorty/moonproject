@@ -107,9 +107,15 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
       const readyQty = may.get(lineNo) ?? 0;
       const roster = rosterOf(db, req.params.id, lineNo);
       const finished = roster.length > 0 ? finishedWearers(db, req.params.id, lineNo) : null;
-      const gone = out.get(lineNo) ?? new Map<number, string>();
-      const wearers = roster.map((w) => ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: w.qty,
-        releasedOn: gone.get(w.rowNo) ?? null, ready: finished ? finished.has(w.rowNo) : null }));
+      const gone = out.get(lineNo);
+      // releasedQty: their pieces out so far (a wearer may go out in parts; the owner's request, Nov 2026); releasedOn: the
+      // releases they went out on, once all their pieces are out.
+      const wearers = roster.map((w) => {
+        const o = gone?.get(w.rowNo);
+        const releasedQty = Math.min(w.qty, o?.qty ?? 0);
+        return { rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: w.qty,
+          releasedQty, releasedOn: o && releasedQty >= w.qty ? o.numbers.join(', ') : null, ...(o && releasedQty < w.qty ? { partlyOn: o.numbers.join(', ') } : {}), ready: finished ? finished.has(w.rowNo) : null };
+      });
       const awaitingSteps = kind !== 'ready_made' && made.get(lineNo) === 'none';
       return { lineNo, description, qty, releasedQty, leftQty: qty - releasedQty, ready: readyQty > 0 && !awaitingSteps, readyQty: awaitingSteps ? 0 : readyQty, awaitingSteps, ...(wearers.length ? { wearers } : {}) };
     });
