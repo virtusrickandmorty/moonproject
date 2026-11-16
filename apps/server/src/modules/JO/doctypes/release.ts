@@ -13,7 +13,7 @@ import type { DocHeader, DocTypeDef } from '../../../engine/documents/registry.t
 import { jobOrderRef, jobOrdersOf, joMoney, rosterOf } from '../public.ts';
 import { STAGE_LABELS, currentStage, forStockReason, isAbandoned, moveTo } from '../stages.ts';
 import { addDays } from './job-order.ts';
-import { finishedPieces, finishedWearers, lineProduction } from '../../PRD/public.ts';
+import { finishedPieces, finishedWearerPieces, lineProduction } from '../../PRD/public.ts';
 import { latestReceived, stageAfterRelease } from '../received.ts';
 
 /**
@@ -195,7 +195,8 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
         // Each wearer's pieces go out once, all together or in parts (the owner's request, Nov 2026); the line's pieces are theirs.
         const roster = new Map(rosterOf(ctx.db, jo.id, l.lineNo).map((w) => [w.rowNo, w]));
         const out = releasedWearers(ctx.db, jo.id).get(l.lineNo) ?? new Map<number, WearerOut>();
-        const finished = doc.overrideReason ? null : finishedWearers(ctx.db, jo.id, l.lineNo); // the owner may release early, with a reason
+        // Their finished pieces (part of a wearer may be finished; the owner's request, Nov 2026). The owner may release early, with a reason.
+        const finished = doc.overrideReason ? null : finishedWearerPieces(ctx.db, jo.id, l.lineNo);
         let qty = 0;
         const done = new Set<number>();
         for (const p of l.wearers) {
@@ -209,7 +210,11 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
           if (left <= 0) error(`lines.${i}.wearers`, 'WEARER_RELEASED', `Line ${l.lineNo}: ${w.wearerName} already went out on ${gone!.numbers.join(', ')}.`);
           else if (p.qty > left) error(`lines.${i}.wearers`, 'WEARER_OVER', `Line ${l.lineNo}: ${w.wearerName} has only ${pieces(left)} left to release${gone ? ` (${gone.qty} of ${w.qty} went out on ${gone.numbers.join(', ')})` : ''}.`);
           else if (p.qty < 1) error(`lines.${i}.wearers`, 'WEARER_QTY', `Line ${l.lineNo}: type the pieces going out for ${w.wearerName}.`);
-          else if (finished && !finished.has(n)) error(`lines.${i}.wearers`, 'WEARER_NOT_READY', `Line ${l.lineNo}: ${w.wearerName} is not finished yet.`);
+          else if (finished && p.qty > (finished.get(n) ?? 0) - (gone?.qty ?? 0)) {
+            const ready = Math.max(0, (finished.get(n) ?? 0) - (gone?.qty ?? 0));
+            error(`lines.${i}.wearers`, 'WEARER_NOT_READY', ready === 0 ? `Line ${l.lineNo}: ${w.wearerName} is not finished yet.`
+              : `Line ${l.lineNo}: only ${pieces(ready)} of ${w.wearerName} ${ready === 1 ? 'is' : 'are'} finished and not out yet.`);
+          }
           qty += p.qty;
         }
         if (picked.length !== new Set(picked).size) error(`lines.${i}.wearers`, 'WEARER_TWICE', `Line ${l.lineNo}: a wearer is ticked twice.`);

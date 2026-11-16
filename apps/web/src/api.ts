@@ -302,7 +302,9 @@ export interface Forfeitable {
 /** GET /api/col/unapplied-deposits: customers with deposits not on a job order, oldest payment first. */
 export interface UnappliedDepositRow { customerId: string; customerName: string; customerCode: string; heldCents: number; maturedCents: number; firstPaid: string | null; maturesOn: string | null; nextMatures: string | null }
 /** A wearer on the release form: a wearer may go out in parts (the owner's request, Nov 2026). */
-export interface JoStatusWearer { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedQty?: number; releasedOn: string | null; partlyOn?: string; ready: boolean | null }
+export interface JoStatusWearer { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedQty?: number; releasedOn: string | null; partlyOn?: string; ready: boolean | null;
+  /** Their pieces through every step (not given when production does not track them by wearer). */
+  readyQty?: number }
 /** GET /api/jo/orders/:id/status, the parts the JO view shows: all derived on the server (NR-2). */
 export interface JoStatus {
   /** Made for stock (TPL, the website shop): where its finished pieces go, instead of a release slip. */

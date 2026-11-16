@@ -16,7 +16,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, Figures, useLive } from '../COL/parts.tsx';
 import { AlsoOnInvoice, Booklet, JoPicker } from './parts.tsx';
-import { nothingToCharge, ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, wearerLeft, wearersQty, type ReleaseValues } from './forms.ts';
+import { nothingToCharge, ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, wearerLeft, wearerReady, wearersQty, type ReleaseValues } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
 /** Ticked to start with: only the lines that may go out now (the owner's request, Oct 2026: what is not ready is greyed). */
@@ -147,7 +147,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                     set({ wearerPieces: { ...v.wearerPieces, [l.lineNo]: next }, qtys: { ...v.qtys, [l.lineNo]: wearersQty(l, mine, next) } });
                   };
                   const free = (l.wearers ?? []).filter((w) => wearerLeft(w) > 0);
-                  const readyFree = free.filter((w) => w.ready);
+                  const readyFree = free.filter((w) => w.ready && wearerReady(w) > 0);
                   // Only what is ready can be ticked (the owner's request, Oct 2026); a line or wearer still being made is greyed.
                   const closedLine = l.leftQty === 0 || l.ready === false;
                   return (
@@ -180,17 +180,20 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                             </div>
                             <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
                               {(l.wearers ?? []).map((w) => {
-                                const left = wearerLeft(w);
+                                const left = wearerReady(w);
                                 const on = mine.includes(w.rowNo);
+                                // Part of a wearer finished: the slip says how many (the owner's request, Nov 2026).
+                                const partReady = !w.releasedOn && w.readyQty !== undefined && left > 0 && left < wearerLeft(w);
                                 const outSoFar = w.releasedQty ?? 0;
                                 return (
                                 <li key={w.rowNo} className="flex items-center gap-1">
                                   <label className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-sm ${w.releasedOn || w.ready === false ? 'text-slate-400' : 'hover:bg-white'}`}>
-                                    <input type="checkbox" aria-label={`Release ${w.wearerName}`} disabled={!!w.releasedOn || w.ready === false || l.ready === false} checked={!!w.releasedOn || on}
+                                    <input type="checkbox" aria-label={`Release ${w.wearerName}`} disabled={!!w.releasedOn || w.ready === false || left === 0 || l.ready === false} checked={!!w.releasedOn || on}
                                       onChange={(e) => tick(e.target.checked ? [...mine, w.rowNo] : mine.filter((x) => x !== w.rowNo))} />
                                     <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}{!w.releasedOn && outSoFar > 0 ? ` · ${outSoFar} out on ${w.partlyOn ?? 'an earlier release'}` : ''}</span></span>
                                     {w.releasedOn ? <span className="text-xs">out on {w.releasedOn}</span>
-                                      : w.ready === true ? <span className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">ready</span>
+                                      : partReady ? <span className="whitespace-nowrap rounded bg-emerald-100 px-1 text-xs text-emerald-800">{left} of {wearerLeft(w)} ready</span>
+                                      : w.ready === true && left > 0 ? <span className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">ready</span>
                                       : w.ready === false ? <span className="rounded bg-amber-100 px-1 text-xs text-amber-900">being made</span> : null}
                                   </label>
                                   {on && left > 1 && (
