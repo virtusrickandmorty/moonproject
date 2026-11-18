@@ -6,13 +6,14 @@
  * price list or typed, the payment, the invoice), the breakdown on the right with Record, in view while the form scrolls.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatPesos } from '@moonproject/shared';
+import { formatPesos, type Paper } from '@moonproject/shared';
+import { PaperPick } from '../../components/PaperNumber.tsx';
 import { api, ApiError, newIdempotencyKey, type CashPlace, type CatItem, type DocHeader, type DocTypeInfo, type Me, type QsBody, type QsPreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { SalesActions } from '../JO/entry.tsx';
 import { NewCustomerButton } from '../JO/JobOrderForm.tsx';
-import { KIND_OF_CLASS } from '../JO/forms.ts';
+import { KIND_OF_CLASS, paperNumberError } from '../JO/forms.ts';
 import { ItemSearch } from '../JO/parts.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -77,16 +78,18 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
     if (mode.kind === 'edit') {
       (async () => {
         const d = await api.get(type.key, mode.id);
-        const input = d.input as { customerId: string; invoiceNumber: string; lines: LineInput[]; note?: string };
+        const input = d.input as { customerId: string; invoiceNumber: string; paper?: Paper; lines: LineInput[]; note?: string };
         setOriginal(d.header);
         setCustomer({ id: input.customerId, name: String(d.doc?.customerName ?? '') });
         setWas((w) => ({ ...w, invoice: input.invoiceNumber }));
+        setPapers((p) => ({ ...p, invoice: input.paper ?? 'bir' }));
         setRows(linesToRows(input.lines));
         setNote(input.note ?? '');
         const paid = (await api.qsPayments(mode.id)).find((p) => p.status === 'posted');
         if (paid) {
-          const c = (await api.get('col.collection', paid.id)).input as { crNumber: string; tenders: TenderInput[] };
+          const c = (await api.get('col.collection', paid.id)).input as { crNumber: string; paper?: Paper; tenders: TenderInput[] };
           setWas((w) => ({ ...w, cr: c.crNumber }));
+          setPapers((p) => ({ ...p, cr: c.paper ?? 'bir' }));
           setTenders(tendersToRows(c.tenders));
         }
       })().catch(fail);
@@ -115,6 +118,7 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
     }, () => undefined);
   };
   const [picked, setPicked] = useState('');
+  const [papers, setPapers] = useState<{ invoice: Paper; cr: Paper }>({ invoice: 'bir', cr: 'bir' }); // the booklets (the owner's request, Nov 2026)
   const pick = (it: CatItem) => { setPicked(it.id); setItemPatch({ kind: KIND_OF_CLASS[it.class], description: it.name, price: '' }); priceFor(it.id, item.qty); };
   const blank = !item.description.trim() && !item.price.trim() && !item.discount.trim();
   const itemErrors = blank ? ['Pick an item from the price list or say what was sold.'] : linesToInput([item]).errors.map((e) => e.replace(/^Line 1/, 'This item'));
@@ -139,13 +143,13 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
     const errors = [
       ...(customer ? [] : ['Pick the customer (or Walk-in).']),
       ...sold.errors,
-      ...(/^\d+$/.test(invoiceNumber.trim()) ? [] : ['Type the invoice number from the booklet (digits only).']),
+      ...(paperNumberError(papers.invoice, invoiceNumber, 'Type the invoice number from the booklet (digits only).', 'Type the internal invoice number: letters and digits, up to 20.') ?? []),
       ...pay.errors,
-      ...(/^\d+$/.test(crNumber.trim()) ? [] : ['Type the CR number from the booklet (digits only).']),
+      ...(paperNumberError(papers.cr, crNumber, 'Type the CR number from the booklet (digits only).', 'Type the internal receipt number: letters and digits, up to 20.') ?? []),
     ];
     const body: QsBody = {
-      sale: { customerId: customer?.id ?? '', invoiceNumber: invoiceNumber.trim(), lines: sold.lines, ...(note.trim() ? { note: note.trim() } : {}) },
-      payment: { crNumber: crNumber.trim(), tenders: pay.tenders },
+      sale: { customerId: customer?.id ?? '', invoiceNumber: invoiceNumber.trim(), ...(papers.invoice === 'internal' ? { paper: 'internal' as const } : {}), lines: sold.lines, ...(note.trim() ? { note: note.trim() } : {}) },
+      payment: { crNumber: crNumber.trim(), ...(papers.cr === 'internal' ? { paper: 'internal' as const } : {}), tenders: pay.tenders },
     };
     return { sold, errors, body };
   };
@@ -220,14 +224,16 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
           <Panel title="Payment: where did the money go?">
             <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" amountHint={sold.totalCents > 0 ? formatPesos(sold.totalCents) : undefined} received />
             <Field label="CR number (from the booklet)" required hint={was.cr ? `CR ${was.cr} stays with the cancelled payment: write this payment on a new CR.` : undefined}>
-              <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+              <input inputMode={papers.cr === 'bir' ? 'numeric' : 'text'} className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => setPapers((p) => ({ ...p, cr }))} />
             </Field>
           </Panel>
           <Panel title="Invoice">
             <div className="grid gap-3 sm:grid-cols-[17rem_minmax(0,1fr)]">
               <Field label="Invoice number (from the booklet)" required
                 hint={was.invoice ? `Invoice no. ${was.invoice} stays with the cancelled sale (keep all its copies): write this sale on a new invoice.` : 'VAT sellers write an invoice for every sale, however small.'}>
-                <input inputMode="numeric" className={inputClass} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+                <input inputMode={papers.invoice === 'bir' ? 'numeric' : 'text'} className={inputClass} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+                <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => setPapers((p) => ({ ...p, invoice }))} />
               </Field>
               <Field label="Note"><textarea rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             </div>

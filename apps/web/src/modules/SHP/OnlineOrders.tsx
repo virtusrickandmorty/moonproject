@@ -6,6 +6,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, manilaTime, peso, useAction } from '../../components/ui.tsx';
+import { PaperPick } from '../../components/PaperNumber.tsx';
+import { paperNumberError } from '../JO/forms.ts';
+import type { Paper } from '@moonproject/shared';
 import { Link, useLocation } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from '../CUS/http.ts';
@@ -97,8 +100,10 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
     return () => clearTimeout(t);
   }, [me, search]);
   const [why, setWhy] = useState('');
+  const [papers, setPapers] = useState<{ invoice: Paper; cr: Paper }>({ invoice: 'bir', cr: 'bir' }); // the booklets (the owner's request, Nov 2026)
   const act = (fn: () => Promise<unknown>) => run(async () => { await fn(); setStep('view'); await onChanged(); });
-  const confirm = () => act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/confirm`, 'POST', { customerId: customer!.id, invoiceNumber: invoiceNumber.trim(), crNumber: crNumber.trim(), version: o.version }));
+  const confirm = () => act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/confirm`, 'POST', { customerId: customer!.id, invoiceNumber: invoiceNumber.trim(), crNumber: crNumber.trim(),
+    ...(papers.invoice === 'internal' ? { invoicePaper: 'internal' } : {}), ...(papers.cr === 'internal' ? { crPaper: 'internal' } : {}), version: o.version }));
   const reject = () => act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/reject`, 'POST', { reason: reason.trim(), version: o.version }));
   const reverse = () => act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/reverse`, 'POST', { reason: reason.trim(), version: o.version }));
   const move = (to: 'ready' | 'completed') => act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/move`, 'POST', { to, version: o.version }));
@@ -167,10 +172,12 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
               <input className={inputClass} value={search} placeholder={customer?.name ?? 'Search a customer'} onChange={(e) => setSearch(e.target.value)} />
               {found.length > 0 && <ul className="mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-md bg-white ring-1 ring-slate-200">{found.map((c) => <li key={c.id}><button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setCustomer({ id: c.id, name: c.display_name }); setSearch(''); setFound([]); }}>{c.display_name}</button></li>)}</ul>}
             </Field>
-            <Field label="Invoice no." required><input className={inputClass} inputMode="numeric" value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} /></Field>
-            <Field label="CR no." required><input className={inputClass} inputMode="numeric" value={crNumber} onChange={(e) => setCr(e.target.value)} /></Field>
+            <Field label="Invoice no." required><input className={inputClass} inputMode={papers.invoice === 'bir' ? 'numeric' : 'text'} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+              <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => setPapers((p) => ({ ...p, invoice }))} /></Field>
+            <Field label="CR no." required><input className={inputClass} inputMode={papers.cr === 'bir' ? 'numeric' : 'text'} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => setPapers((p) => ({ ...p, cr }))} /></Field>
           </div>
-          <div className="flex gap-2"><Button tone="primary" disabled={busy || !customer || !/^\d+$/.test(invoiceNumber.trim()) || !/^\d+$/.test(crNumber.trim())} onClick={() => void confirm()}>{busy ? 'Recording…' : 'Confirm and record the sale'}</Button><Button onClick={() => setStep('view')}>Back</Button></div>
+          <div className="flex gap-2"><Button tone="primary" disabled={busy || !customer || !!paperNumberError(papers.invoice, invoiceNumber, 'x', 'x') || !!paperNumberError(papers.cr, crNumber, 'x', 'x')} onClick={() => void confirm()}>{busy ? 'Recording…' : 'Confirm and record the sale'}</Button><Button onClick={() => setStep('view')}>Back</Button></div>
         </div>
       )}
       {step === 'reverse' && (

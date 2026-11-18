@@ -210,7 +210,10 @@ describe('release gate and rules (D3, E4, N-10)', () => {
     expect(res.json()).toMatchObject({ code: 'VALIDATION', message: 'Invoice no. 901 is already used on IR-000001. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.' });
     expect(await status(b)).toMatchObject({ stage: 'ready', awaitingInvoice: [] });
     expect(env.db.prepare(`SELECT COUNT(*) FROM documents WHERE doc_type = 'jo.release'`).pluck().get()).toBe(1);
-    for (const invoiceNumber of ['', '0', 'SI-12']) expect((await release({ release: releaseAll(b), invoice: { invoiceNumber } }, 5_600_000)).statusCode).toBe(400);
+    // Empty is not a number at all; a BIR invoice is digits only (letters are for an internal one, Nov 2026).
+    expect((await release({ release: releaseAll(b), invoice: { invoiceNumber: '' } }, 5_600_000)).statusCode).toBe(400);
+    for (const invoiceNumber of ['0', 'SI-12']) expect((await release({ release: releaseAll(b), invoice: { invoiceNumber } }, 5_600_000)).statusCode).toBe(422);
+    expect(env.db.prepare(`SELECT COUNT(*) FROM documents WHERE doc_type = 'jo.release'`).pluck().get()).toBe(1); // nothing recorded
   });
 
   it('checks stage, lines and quantities; nothing is released before it is ready, the owner included (Oct 2026)', async () => {

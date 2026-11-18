@@ -17,7 +17,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { allocate, applyRate, conflict, formatPeso, manilaDate, vatFromGross, type Issue } from '@moonproject/shared';
+import { PAPERS, allocate, applyRate, conflict, formatPeso, internalKey, manilaDate, paperNumberProblem, paperWords, vatFromGross, type Issue, type Paper } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
@@ -47,8 +47,10 @@ const saleApplication = z.object({ saleId: z.uuid(), amountCents: z.number().int
 export const collectionInput = z
   .object({
     customerId: z.uuid(),
-    // Typed from the ATP CR booklet, never prefilled (ACC-03 booklet mode).
-    crNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the CR (digits only).'),
+    // Typed from the ATP CR booklet, never prefilled (ACC-03 booklet mode); or from the internal booklet (`paper`, the
+    // owner's request, Nov 2026), letters too. validate checks the number for its paper.
+    crNumber: z.string().trim().min(1, 'Type the number printed on the CR.').max(20),
+    paper: z.enum(PAPERS).optional(), // absent: BIR
     applications: z.array(application).max(50),
     sales: z.array(saleApplication).min(1).max(20).optional(),
     tenders: z.array(collectionTenderInput).min(1).max(10),
@@ -88,10 +90,12 @@ export interface Collection extends Omit<CollectionInput, 'applications' | 'sale
   totalCents: number;
 }
 
-function crUsedBy(db: Db, crNumber: string) {
+/** The collections on a receipt number of that paper: BIR ones by the number ("0125" is 125), internal ones by their letters. */
+function crUsedBy(db: Db, crNumber: string, paper: Paper) {
+  const same = paper === 'internal' ? `c.paper = 'internal' AND UPPER(TRIM(c.cr_number)) = ?` : `c.paper = 'bir' AND CAST(c.cr_number AS INTEGER) = CAST(? AS INTEGER)`;
   return db
-    .prepare(`SELECT d.id, d.number, d.status FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE CAST(c.cr_number AS INTEGER) = CAST(? AS INTEGER) ORDER BY d.posted_at DESC`)
-    .all(crNumber) as { id: string; number: string; status: string }[];
+    .prepare(`SELECT d.id, d.number, d.status FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE ${same} ORDER BY d.posted_at DESC`)
+    .all(paper === 'internal' ? internalKey(crNumber) : crNumber) as { id: string; number: string; status: string }[];
 }
 
 export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
@@ -151,12 +155,17 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     if (c?.is_active !== 1) add('error', 'customerId', 'CUSTOMER', c ? `${c.display_name} is inactive. Pick an active customer.` : 'Pick a customer.');
     // One standing collection per CR. A cancelled one frees its number (the owner's rule, Nov 2026): an edit keeps its own
     // CR without a word, and anything else is told, because a spoiled paper CR stays spoiled.
-    const used = crUsedBy(ctx.db, doc.crNumber);
+    const paper = doc.paper ?? 'bir';
+    const cr = paperWords(paper, doc.crNumber, 'CR');
+    const malformed = paperNumberProblem(paper, doc.crNumber, 'CR');
+    if (malformed) add('error', 'crNumber', 'CR_NUMBER', malformed);
+    const used = malformed ? [] : crUsedBy(ctx.db, doc.crNumber, paper);
     const standing = used.find((u) => u.status === 'posted');
     const cancelled = used.find((u) => u.status === 'cancelled' && u.id !== ctx.replacesId);
-    if (standing) add('error', 'crNumber', 'CR_USED', `CR ${doc.crNumber} is already used on ${standing.number}. Each CR number is used once: write this payment on a new CR.`);
-    else if (cancelled && !used.some((u) => u.id === ctx.replacesId)) add('warning', 'crNumber', 'CR_REUSED', `CR ${doc.crNumber} was on ${cancelled.number}, which is cancelled. Use it again only if this is the same paper receipt: a spoiled CR is kept with all its copies.`);
-    const booklet = bookletIssue(ctx.db, 'CR', doc.crNumber, 'crNumber');
+    if (standing) add('error', 'crNumber', 'CR_USED', `${cr[0]!.toUpperCase()}${cr.slice(1)} is already used on ${standing.number}. Each receipt number is used once: write this payment on a new receipt.`);
+    else if (cancelled && !used.some((u) => u.id === ctx.replacesId)) add('warning', 'crNumber', 'CR_REUSED', `${cr[0]!.toUpperCase()}${cr.slice(1)} was on ${cancelled.number}, which is cancelled. Use it again only if this is the same paper receipt: a spoiled receipt is kept with all its copies.`);
+    // Only BIR receipts come from an ATP booklet.
+    const booklet = paper === 'bir' && !malformed ? bookletIssue(ctx.db, 'CR', doc.crNumber, 'crNumber') : null;
     if (booklet) issues.push(booklet);
     issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     issues.push(...cashPlaceIssues(ctx.db, doc.tenders, 'Pick where the money went.'));
@@ -246,9 +255,9 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   persist(db, doc, h) {
     const w = doc.withholding;
     db.prepare(
-      `INSERT INTO col_collections (document_id, customer_id, customer_name, cr_number, cwt_cents, cwt_atc, cert_2307, vat_withheld_cents, unapplied_cents, short_over_cents, settle_small_difference, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(h.documentId, doc.customerId, doc.customerName, doc.crNumber, doc.cwtCents, w?.atc ?? null, w?.certificate ?? null, doc.vatWithheldCents, doc.unappliedCents, doc.shortOverCents, doc.settleSmallDifference ? 1 : 0, doc.note ?? null);
+      `INSERT INTO col_collections (document_id, customer_id, customer_name, cr_number, cwt_cents, cwt_atc, cert_2307, vat_withheld_cents, unapplied_cents, short_over_cents, settle_small_difference, note, paper)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(h.documentId, doc.customerId, doc.customerName, doc.crNumber, doc.cwtCents, w?.atc ?? null, w?.certificate ?? null, doc.vatWithheldCents, doc.unappliedCents, doc.shortOverCents, doc.settleSmallDifference ? 1 : 0, doc.note ?? null, doc.paper ?? 'bir');
     insertTenders(db, 'col_tenders', h.documentId, doc.tenders);
     insertTenderChecks(db, h.documentId, doc.tenders);
     insertReceivedAs(db, h.documentId, doc.tenders);
@@ -269,7 +278,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   journal(doc) {
     const party = { type: 'customer', id: doc.customerId };
     return {
-      memo: `Collection from ${doc.customerName}, CR ${doc.crNumber}`,
+      memo: `Collection from ${doc.customerName}, ${paperWords(doc.paper, doc.crNumber, 'CR')}`,
       lines: [
         ...doc.tenders.map((t) => ({ account: { cashPlace: t.cashPlaceId }, debitCents: t.amountCents, ...(t.reference ? { memo: t.reference } : {}) })),
         { account: { role: 'CWT' }, party, debitCents: doc.cwtCents, memo: `2307 ${doc.withholding?.atc ?? ''}`.trim() },
@@ -291,7 +300,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     const r = db
       .prepare(`SELECT c.*, d.total_cents FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE c.document_id = ?`)
       .get(documentId) as
-      | { customer_id: string; customer_name: string; cr_number: string; cwt_cents: number; cwt_atc: 'WC158' | 'WC160' | 'other' | null; cert_2307: 'pending' | 'received' | null;
+      | { customer_id: string; customer_name: string; cr_number: string; paper: Paper; cwt_cents: number; cwt_atc: 'WC158' | 'WC160' | 'other' | null; cert_2307: 'pending' | 'received' | null;
           vat_withheld_cents: number; unapplied_cents: number; short_over_cents: number; settle_small_difference: number; note: string | null; total_cents: number }
       | undefined;
     if (!r) throw new Error(`Collection ${documentId} not found`);
@@ -322,6 +331,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     return {
       customerId: r.customer_id,
       crNumber: r.cr_number,
+      ...(r.paper === 'internal' ? { paper: 'internal' as const } : {}),
       ...(r.cwt_atc && r.cert_2307
         ? { withholding: { cwtCents: r.cwt_cents, atc: r.cwt_atc, certificate: r.cert_2307, ...(r.vat_withheld_cents > 0 ? { vatWithheldCents: r.vat_withheld_cents } : {}) } }
         : {}),
@@ -342,10 +352,11 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   },
 
   toInput(doc) {
-    const { customerId, crNumber, withholding, settleSmallDifference, note, postDatedCheckId } = doc;
+    const { customerId, crNumber, paper, withholding, settleSmallDifference, note, postDatedCheckId } = doc;
     return {
       customerId,
       crNumber,
+      ...(paper === 'internal' ? { paper } : {}),
       applications: doc.applications.map(({ jobOrderId, amountCents }) => ({ jobOrderId, amountCents })),
       ...(doc.sales.length > 0 ? { sales: doc.sales.map(({ saleId, amountCents }) => ({ saleId, amountCents })) } : {}),
       tenders: doc.tenders.map(tenderWithCheckToInput),
@@ -391,7 +402,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       ...(doc.unappliedCents > 0 ? [`${formatPeso(doc.unappliedCents)} kept as deposit`] : []),
     ];
     const diff = doc.shortOverCents === 0 ? '' : ` ${formatPeso(Math.abs(doc.shortOverCents))} ${doc.shortOverCents > 0 ? 'over' : 'short'} goes to cash short and over.`;
-    return `This will record ${formatPeso(cash)} received from ${doc.customerName}${where}${cwt}, CR ${doc.crNumber}${uses.length ? `: ${uses.join(', ')}` : ''}.${diff}`;
+    return `This will record ${formatPeso(cash)} received from ${doc.customerName}${where}${cwt}, ${paperWords(doc.paper, doc.crNumber, 'CR')}${uses.length ? `: ${uses.join(', ')}` : ''}.${diff}`;
   },
 
   arbitrary(db) {

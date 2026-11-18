@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { conflict, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
+import { PAPERS, conflict, formatPeso, manilaDate, paperWords, type Issue } from '@moonproject/shared';
 import type { DocTypeDef, NoticeTarget } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
@@ -26,7 +26,8 @@ const pieces = (n: number) => `${n} ${n === 1 ? 'piece' : 'pieces'}`;
 export const deliveryInput = z.object({
   programId: z.uuid(),
   // Typed from the booklet; the invoice (a quick sale) checks it against the ATP booklet register and earlier use.
-  invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
+  invoiceNumber: z.string().trim().min(1, 'Type the number printed on the invoice.').max(20),
+  paper: z.enum(PAPERS).optional(), // the internal booklet (the owner's request, Nov 2026); absent: BIR. Its quick sale checks the number.
   lines: z.array(z.object({ itemId: z.uuid(), qty: z.number().int().min(1).max(100_000) }).strict()).min(1).max(29), // + the fee: 30 invoice lines
   feeCents: z.number().int().min(0).max(MAX_FEE_CENTS), // the delivery fee, a service line on the invoice (0 = none)
   deliveredBy: text(120), // our rider, or the courier
@@ -112,9 +113,9 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
     // Only with its invoice (recordDelivery): the generic document routes would leave it without one.
     if (!recordingWithInvoice.on) throw conflict('USE_TPL_DELIVERY', "Record a delivery from TPL services (the client's program), so its invoice is recorded with it.");
     db.prepare(
-      `INSERT INTO tpl_deliveries (document_id, program_id, customer_id, customer_name, invoice_number, terms_days, due_date, goods_cents, fee_cents,
-         delivered_by, received_by, tracking, override_reason, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(h.documentId, doc.programId, doc.customerId, doc.customerName, doc.invoiceNumber, doc.termsDays, doc.dueDate, doc.goodsCents, doc.feeCents,
+      `INSERT INTO tpl_deliveries (document_id, program_id, customer_id, customer_name, invoice_number, paper, terms_days, due_date, goods_cents, fee_cents,
+         delivered_by, received_by, tracking, override_reason, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(h.documentId, doc.programId, doc.customerId, doc.customerName, doc.invoiceNumber, doc.paper ?? 'bir', doc.termsDays, doc.dueDate, doc.goodsCents, doc.feeCents,
       doc.deliveredBy, doc.receivedBy ?? null, doc.tracking ?? null, doc.overrideReason ?? null, doc.note ?? null);
     const line = db.prepare(`INSERT INTO tpl_delivery_lines (document_id, line_no, item_id, description, size, kind, qty, unit_price_cents, amount_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const l of doc.lines) line.run(h.documentId, l.lineNo, l.itemId, l.description, l.size, l.kind, l.qty, l.unitPriceCents, l.amountCents);
@@ -128,7 +129,7 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
     if (feeNetCents === 0) return null;
     const party = { type: 'customer', id: doc.customerId };
     return {
-      memo: `Delivery fee on invoice no. ${doc.invoiceNumber}: delivery income`,
+      memo: `Delivery fee on ${paperWords(doc.paper, doc.invoiceNumber, 'invoice')}: delivery income`,
       lines: [
         { account: { role: 'SALES_SERVICE' }, party, debitCents: feeNetCents, memo: 'The delivery fee, out of repairs and alterations' },
         { account: { role: 'SALES_DELIVERY' }, party, creditCents: feeNetCents, memo: 'Delivery fee' },
@@ -137,7 +138,7 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
   },
 
   load(db, documentId) {
-    const r = db.prepare(`SELECT program_id AS programId, customer_id AS customerId, customer_name AS customerName, invoice_number AS invoiceNumber, terms_days AS termsDays,
+    const r = db.prepare(`SELECT program_id AS programId, customer_id AS customerId, customer_name AS customerName, invoice_number AS invoiceNumber, CASE WHEN paper = 'internal' THEN paper END AS paper, terms_days AS termsDays,
         due_date AS dueDate, goods_cents AS goodsCents, fee_cents AS feeCents, delivered_by AS deliveredBy, received_by AS receivedBy, tracking,
         override_reason AS overrideReason, note FROM tpl_deliveries WHERE document_id = ?`).get(documentId) as Record<string, unknown> | undefined;
     if (!r) throw new Error(`Delivery ${documentId} not found`);
@@ -147,8 +148,8 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
     return { ...kept, ...latestReceived(db, documentId), lines, totalCents: kept.goodsCents + kept.feeCents }; // who received it, once typed
   },
 
-  toInput: ({ programId, invoiceNumber, lines, feeCents, deliveredBy, receivedBy, tracking, overrideReason, note }) => ({
-    programId, invoiceNumber, lines: lines.map(({ itemId, qty }) => ({ itemId, qty })), feeCents, deliveredBy,
+  toInput: ({ programId, invoiceNumber, paper, lines, feeCents, deliveredBy, receivedBy, tracking, overrideReason, note }) => ({
+    programId, invoiceNumber, ...(paper === 'internal' ? { paper } : {}), lines: lines.map(({ itemId, qty }) => ({ itemId, qty })), feeCents, deliveredBy,
     ...(receivedBy ? { receivedBy } : {}), ...(tracking ? { tracking } : {}), ...(overrideReason ? { overrideReason } : {}), ...(note ? { note } : {}),
   }),
 
@@ -166,7 +167,7 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
   summary(doc) {
     const n = doc.lines.reduce((s, l) => s + l.qty, 0);
     const fee = doc.feeCents > 0 ? ` and a delivery fee of ${formatPeso(doc.feeCents)}` : '';
-    return `This will deliver ${pieces(n)} to ${doc.customerName} from their stock and record invoice no. ${doc.invoiceNumber}: ${formatPeso(doc.goodsCents)} for the pieces${fee}, `
+    return `This will deliver ${pieces(n)} to ${doc.customerName} from their stock and record ${paperWords(doc.paper, doc.invoiceNumber, 'invoice')}: ${formatPeso(doc.goodsCents)} for the pieces${fee}, `
       + `${formatPeso(doc.totalCents)} in all, due ${doc.dueDate} (${doc.termsDays} days).`;
   },
 

@@ -6,6 +6,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api, newIdempotencyKey, type DocDetail, type DocTypeInfo, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, StatusChip, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
+import { PaperPick } from '../../components/PaperNumber.tsx';
+import type { Paper } from '@moonproject/shared';
 import { printDocument, type ViewParts } from '../../generic/DocView.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { fromCents, itemLabel, toCents, type Issue, type TplCardRow, type TplDeliveryPreview, type TplDeliveryRow, type TplItem, type TplProgram, type TplProgramPage } from './types.ts';
@@ -578,13 +580,13 @@ function ReceivedDialog({ delivery, onClose, onSaved }: { delivery: Pick<TplDeli
 export function DeliveryEditor({ page, canOverride, onRecorded }: { page: TplProgramPage; canOverride: boolean; onRecorded: (r: { delivery: { id: string; number: string } }) => void }) {
   const items = page.items.filter((i) => i.isActive && i.onHand > 0);
   const [qty, setQty] = useState<Record<string, string>>({});
-  const [f, setF] = useState({ invoiceNumber: '', fee: '', deliveredBy: '', receivedBy: '', tracking: '', overrideReason: '', note: '' });
+  const [f, setF] = useState({ invoiceNumber: '', paper: 'bir' as Paper, fee: '', deliveredBy: '', receivedBy: '', tracking: '', overrideReason: '', note: '' });
   const [checked, setChecked] = useState<TplDeliveryPreview | null>(null);
   const [key] = useState(newIdempotencyKey);
   const a = useAction();
   const feeCents = toCents(f.fee);
   const body = () => ({
-    programId: page.program.id, invoiceNumber: f.invoiceNumber.trim(), feeCents: feeCents ?? 0, deliveredBy: f.deliveredBy.trim(),
+    programId: page.program.id, invoiceNumber: f.invoiceNumber.trim(), ...(f.paper === 'internal' ? { paper: f.paper } : {}), feeCents: feeCents ?? 0, deliveredBy: f.deliveredBy.trim(),
     lines: items.filter((i) => Number(qty[i.id] || '0') > 0).map((i) => ({ itemId: i.id, qty: Number(qty[i.id]) })),
     ...(f.receivedBy.trim() ? { receivedBy: f.receivedBy.trim() } : {}), ...(f.tracking.trim() ? { tracking: f.tracking.trim() } : {}),
     ...(f.overrideReason.trim() ? { overrideReason: f.overrideReason.trim() } : {}), ...(f.note.trim() ? { note: f.note.trim() } : {}),
@@ -625,7 +627,11 @@ export function DeliveryEditor({ page, canOverride, onRecorded }: { page: TplPro
         </table>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="Invoice no. (from the booklet)" required><input inputMode="numeric" className={inputClass} value={f.invoiceNumber} onChange={(e) => edit({ invoiceNumber: e.target.value.replace(/\D/g, '') })} /></Field>
+        <Field label="Invoice no. (from the booklet)" required>
+          <input inputMode={f.paper === 'bir' ? 'numeric' : 'text'} className={inputClass} value={f.invoiceNumber}
+            onChange={(e) => edit({ invoiceNumber: f.paper === 'bir' ? e.target.value.replace(/\D/g, '') : e.target.value.slice(0, 20) })} />
+          <PaperPick what="invoice" paper={f.paper} onPaper={(paper) => edit({ paper, ...(paper === 'bir' ? { invoiceNumber: f.invoiceNumber.replace(/\D/g, '') } : {}) })} />
+        </Field>
         <Field label="Delivery fee" hint="Empty = none"><input inputMode="decimal" className={`${inputClass} text-right tabular-nums`} value={f.fee} onChange={(e) => edit({ fee: e.target.value })} placeholder="0.00" /></Field>
         <Field label="Delivered by" required hint="Our rider, or the courier"><input className={inputClass} maxLength={120} value={f.deliveredBy} onChange={(e) => edit({ deliveredBy: e.target.value })} /></Field>
         <Field label="Received by" hint="Leave blank if not known yet: record it later from the signed receipt"><input className={inputClass} maxLength={120} value={f.receivedBy} onChange={(e) => edit({ receivedBy: e.target.value })} /></Field>

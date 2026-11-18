@@ -7,7 +7,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, conflict, formatPeso, newId, notFound } from '@moonproject/shared';
+import { AppError, PAPERS, conflict, formatPeso, newId, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { pictureFile, sha256Hex } from '../../engine/attachments.ts';
@@ -54,8 +54,11 @@ const paymentInput = z.object({
 const tokenInput = z.object({ token: z.string().min(10).max(100) }).strict();
 const confirmInput = z.object({
   customerId: z.uuid(), // "Walk-in" usually; a known customer if the buyer is one
-  invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the invoice number from the booklet (digits only).'),
-  crNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the CR number from the booklet (digits only).'),
+  // BIR booklets, or the internal ones (the owner's request, Nov 2026): the sale and its collection check each number.
+  invoiceNumber: z.string().trim().min(1, 'Type the invoice number from the booklet.').max(20),
+  invoicePaper: z.enum(PAPERS).optional(),
+  crNumber: z.string().trim().min(1, 'Type the CR number from the booklet.').max(20),
+  crPaper: z.enum(PAPERS).optional(),
   version: z.number().int().min(1),
 }).strict();
 const rejectInput = z.object({ reason: z.string().trim().min(10).max(500), version: z.number().int().min(1) }).strict();
@@ -409,8 +412,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       const delivery = o.delivery_fee_cents > 0
         ? [{ kind: 'service' as const, description: `Delivery (${o.delivery_option ?? 'delivery'})`, qty: 1, unitPriceCents: o.delivery_fee_cents, discountCents: 0, deliveryFee: true as const }] : [];
       const recorded = recordQuickSale(engineEnv(deps), { userId: user.userId, permissions: user.permissions },
-        { customerId: b.customerId, invoiceNumber: b.invoiceNumber, lines: [...saleLines, ...delivery], note: `Online order ${o.number} · ${o.name} · ${o.phone}` },
-        { crNumber: b.crNumber, tenders: [{ cashPlaceId: o.cash_place_id ?? pay.cashPlaceId, amountCents: o.total_cents, ...(o.payment_reference ? { reference: o.payment_reference.slice(0, 40) } : {}) }] },
+        { customerId: b.customerId, invoiceNumber: b.invoiceNumber, ...(b.invoicePaper === 'internal' ? { paper: b.invoicePaper } : {}), lines: [...saleLines, ...delivery], note: `Online order ${o.number} · ${o.name} · ${o.phone}` },
+        { crNumber: b.crNumber, ...(b.crPaper === 'internal' ? { paper: b.crPaper } : {}), tenders: [{ cashPlaceId: o.cash_place_id ?? pay.cashPlaceId, amountCents: o.total_cents, ...(o.payment_reference ? { reference: o.payment_reference.slice(0, 40) } : {}) }] },
         o.total_cents);
       db.prepare('UPDATE shp_orders SET sale_document_id = ? WHERE id = ?').run(recorded.sale.id, o.id);
       const saleNumber = db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(recorded.sale.id) as string;

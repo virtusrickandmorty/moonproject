@@ -97,7 +97,7 @@ export function returnSale(env: EngineEnv, actor: Actor, saleId: string, reason:
 export function crNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
   return db
     .prepare(`SELECT CAST(c.cr_number AS INTEGER) AS n, d.number, d.status FROM col_collections c JOIN documents d ON d.id = c.document_id
-              WHERE CAST(c.cr_number AS INTEGER) BETWEEN ? AND ? ORDER BY 1`)
+              WHERE c.paper = 'bir' AND CAST(c.cr_number AS INTEGER) BETWEEN ? AND ? ORDER BY 1`)
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
 }
 

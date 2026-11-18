@@ -16,8 +16,10 @@ import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx'
 import { Errors, useLive } from '../COL/parts.tsx';
 import { AlsoOnInvoice, Booklet, ReleasePicker } from './parts.tsx';
 import { invoiceBooklet, invoiceInput } from './forms.ts';
+import { PaperPick } from '../../components/PaperNumber.tsx';
+import type { Paper } from '@moonproject/shared';
 
-type Stored = { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; note?: string };
+type Stored = { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; paper?: Paper; note?: string };
 type Again = { id: string; number: string; invoiceNumber: string };
 
 export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
@@ -31,6 +33,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
   const rec = useRecord(type, mode, (d) => {
     const input = d.input as unknown as Stored;
     setWas(input.invoiceNumber);
+    setPaper(input.paper ?? 'bir');
     setNote(input.note ?? '');
     setPicked(input.alsoReleaseIds ?? []);
     api.joReleaseInfo(input.releaseId).then(setInfo, rec.fail);
@@ -47,6 +50,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
 
   const printed = usePrintedDate(rec.original);
   const [again, setAgain] = useState<Again | null>(null); // the cancelled record recorded again, from ?again=
+  const [paper, setPaper] = useState<Paper>('bir'); // the invoice's booklet (the owner's request, Nov 2026)
   useEffect(() => {
     const id = mode.kind === 'new' ? new URLSearchParams(location.search).get('again') : null;
     if (!id) return;
@@ -54,6 +58,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
       const input = d.input as unknown as Stored;
       setAgain({ id, number: d.header.number, invoiceNumber: input.invoiceNumber });
       setInvoice(input.invoiceNumber);
+      setPaper(input.paper ?? 'bir');
       setPicked(input.alsoReleaseIds ?? []);
       printed.setText(d.header.businessDate);
       return api.joReleaseInfo(input.releaseId, input.alsoReleaseIds).then(setInfo);
@@ -65,7 +70,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
   // The lines and booklet figures follow the releases ticked.
   const alsoKey = also.join(',');
   useEffect(() => { if (r) api.joReleaseInfo(r.id, also).then((i) => { if (JSON.stringify(i) !== JSON.stringify(info)) setInfo(i); }, rec.fail); }, [r?.id, alsoKey]);
-  const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, note, also, ...(again ? { againOf: again.id } : {}) });
+  const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, paper, note, also, ...(again ? { againOf: again.id } : {}) });
   const live = useLive<Preview | null>(JSON.stringify([typed.input, printed.businessDate]), typed.errors.length === 0 && !printed.error, () => rec.preview(typed.input, printed.businessDate));
   // The preview's own figures once it answers; until then the release's. In mode C both show the sale less the downpayments invoiced.
   const doc = live?.doc as Parameters<typeof invoiceBooklet>[0] & { depositAppliedCents: number } | undefined;
@@ -97,7 +102,8 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
         <Panel title="Invoice">
           <Field label="Invoice number (from the booklet)" required
             hint={again ? `The number of ${again.number}, kept.` : was ? `Invoice no. ${was} stays with the cancelled record (keep all its copies): write this sale on a new invoice.` : 'Type the number printed on the invoice you wrote.'}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} readOnly={!!again} onChange={(e) => setInvoice(e.target.value)} />
+            <input inputMode={paper === 'bir' ? 'numeric' : 'text'} className={`${inputClass} max-w-40`} value={invoiceNumber} readOnly={!!again} onChange={(e) => setInvoice(e.target.value)} />
+            <PaperPick what="invoice" paper={paper} onPaper={setPaper} disabled={!!again} />
           </Field>
           <PrintedDateField label="Date on the invoice" value={printed.text} onChange={printed.setText} />
           <Field label="Note" required={!!again} hint={again ? 'Why it is recorded again, like "cancelled by mistake".' : undefined}><input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
