@@ -17,8 +17,9 @@
  * part's rate and counted, capped and ticked per part.
  * Wearers (the owner's request, Oct 2026): on a line with a wearer list, a work row may name the wearers it finished; its
  * pieces are then the pieces they have left, and a wearer is done once per step (until that entry is cancelled). A row
- * with one wearer ticked may be for part of their pieces (3 of 8 done); they are done once all are recorded. A step takes
- * the wearers forwarded from the step before (passing that needs the over-cap reason).
+ * with one wearer ticked may be for part of their pieces (3 of 8 done); they are done once all are recorded. A row with
+ * several wearers may give each one's pieces (`wearerPieces`; the owner's request, Nov 2026); a wearer not given takes all
+ * they have left. A step takes the wearers forwarded from the step before (passing that needs the over-cap reason).
  * Rework sent back (the owner's request, Oct 2026): rework rows may name the wearers sent back to the step, and may go on
  * a completed step while rework sent back to it is open.
  */
@@ -46,6 +47,8 @@ const row = z
     correctionOf: z.uuid().optional(), // a row already paid, corrected with negative pieces (D6)
     repeatReason: z.string().trim().min(5).max(200).optional(), // why a row matching a recorded one is a different sheet
     wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(), // the line's wearers (roster rows) this row finished
+    // Work: the pieces of some of those wearers done by this row (part of theirs); the others, all they have left.
+    wearerPieces: z.array(z.object({ rowNo: z.number().int().min(1).max(1000), pieces: z.number().int().min(1).max(MAX_PIECES) }).strict()).min(1).max(1000).optional(),
     part: z.enum(SET_PARTS).optional(), // on a set: the upper or the lower part (paid at its own rate)
   })
   .strict();
@@ -242,6 +245,11 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         const forwarded = r.kind === 'work' && route && onRoute ? forwardedWearers(ctx.db, jo.id, line.lineNo, route, step.id, r.part) : null;
         const key = `${line.lineNo}|${r.part}|${r.kind}`;
         const mine = ticked.get(key) ?? new Set<number>();
+        const given = new Map((r.wearerPieces ?? []).map((x) => [x.rowNo, x.pieces]));
+        if (r.wearerPieces && r.kind !== 'work') add('error', `${f}.wearerPieces`, 'WEARER_PIECES_KIND', `${at}: pieces per wearer go with normal work only.`);
+        if (given.size !== (r.wearerPieces?.length ?? 0) || [...given.keys()].some((n) => !r.wearers!.includes(n))) {
+          add('error', `${f}.wearerPieces`, 'WEARER_PIECES_ROW', `${at}: pieces are given for a wearer not ticked on the row, or twice.`);
+        }
         let pieces = 0;
         for (const n of r.wearers) {
           const w = roster.get(n);
@@ -253,7 +261,13 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
             add('error', 'overCapReason', 'WEARER_NOT_FORWARDED', `${at}: ${w.wearerName}${r.part !== 'whole' ? ` (${r.part} part)` : ''} has not come out of the step before ${step.name} yet. Give a reason to record it anyway.`);
           }
           mine.add(n);
-          pieces += r.kind === 'work' && !done.has(n) ? each.get(n)?.left ?? w.qty : w.qty;
+          const left = each.get(n)?.left ?? w.qty;
+          const typed = r.kind === 'work' && r.wearers.length > 1 ? given.get(n) : undefined;
+          if (typed !== undefined && !done.has(n) && typed > left) {
+            const had = each.get(n);
+            add('error', `${f}.wearerPieces`, 'WEARER_PIECES_LEFT', `${at}: ${w.wearerName} has ${had ? `${left} of their ${w.qty} pieces left on ${step.name} (${had.pieces} recorded on ${had.numbers.join(', ')})` : plural(left)}, so at most ${left} of theirs.`);
+          }
+          pieces += r.kind === 'work' && !done.has(n) ? typed ?? left : w.qty;
         }
         ticked.set(key, mine);
         // One wearer ticked: part of their pieces left may be recorded (the owner's request, Oct 2026).
@@ -264,7 +278,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
           const had = each.get(one.rowNo);
           if (r.pieces > pieces) add('error', `${f}.pieces`, 'WEARER_PIECES_LEFT', `${at}: ${one.wearerName} has ${had ? `${pieces} of their ${one.qty} pieces left on ${step.name} (${had.pieces} recorded on ${had.numbers.join(', ')})` : plural(pieces)}, so the row is at most ${pieces}.`);
         } else if (r.kind !== 'correction' && pieces !== r.pieces) {
-          add('error', `${f}.pieces`, 'WEARERS_PIECES', `${at}: the wearers ticked ${r.kind === 'work' ? 'have' : 'are'} ${plural(pieces)}${r.kind === 'work' ? ' left' : ''}, so the row is ${pieces}, not ${r.pieces}.${r.kind === 'work' ? " To record part of a wearer's pieces, tick that wearer on a row of their own." : ''}`);
+          add('error', `${f}.pieces`, 'WEARERS_PIECES', given.size > 0 ? `${at}: the pieces of the wearers ticked add up to ${pieces}, so the row is ${pieces}, not ${r.pieces}.`
+            : `${at}: the wearers ticked ${r.kind === 'work' ? 'have' : 'are'} ${plural(pieces)}${r.kind === 'work' ? ' left' : ''}, so the row is ${pieces}, not ${r.pieces}.${r.kind === 'work' ? " To record part of a wearer's pieces, type their pieces beside them." : ''}`);
         }
       }
     }
@@ -308,11 +323,12 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       ins.run(id, h.documentId, r.rowNo, doc.jobOrderId, r.lineNo, doc.stepId, r.employeeId, r.employeeName, doc.workDate, r.kind, r.pieces, r.garmentType, r.complexity,
         r.rateCents, r.rateSource, r.rateSource === 'typed' ? r.rateReason! : null, r.amountCents, r.correctionOf ?? null, r.part);
       if (r.repeatReason) db.prepare('INSERT INTO prd_assignment_repeats (assignment_id, reason) VALUES (?, ?)').run(id, r.repeatReason);
-      // Work: each wearer's pieces (one wearer, the row's; else what each had left). Rework: all theirs (no pieces).
+      // Work: each wearer's pieces (one wearer, the row's; else as given, or what each had left). Rework: all theirs (no pieces).
       const left = r.kind === 'work' && r.wearers ? wearerPieces(db, doc.jobOrderId, r.lineNo, doc.stepId, r.part) : null;
       const qty = new Map(left ? rosterOf(db, doc.jobOrderId, r.lineNo).map((w) => [w.rowNo, w.qty]) : []);
+      const given = new Map((r.wearerPieces ?? []).map((x) => [x.rowNo, x.pieces]));
       for (const n of r.wearers ?? []) {
-        const pieces = !left ? null : r.wearers!.length === 1 ? r.pieces : left.get(n)?.left ?? qty.get(n) ?? null;
+        const pieces = !left ? null : r.wearers!.length === 1 ? r.pieces : given.get(n) ?? left.get(n)?.left ?? qty.get(n) ?? null;
         db.prepare('INSERT INTO prd_assignment_wearers (assignment_id, roster_row_no, pieces) VALUES (?, ?, ?)').run(id, n, pieces);
       }
     }
@@ -336,19 +352,26 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
           `SELECT row_no AS rowNo, line_no AS lineNo, employee_id AS employeeId, employee_name AS employeeName, kind, pieces, garment_type AS garmentType, complexity,
              rate_cents AS rateCents, rate_source AS rateSource, rate_reason AS rateReason, amount_cents AS amountCents, correction_of_id AS correctionOf, part,
              work_date AS workDate, (SELECT reason FROM prd_assignment_repeats WHERE assignment_id = a.id) AS repeatReason,
-             (SELECT json_group_array(roster_row_no) FROM (SELECT roster_row_no FROM prd_assignment_wearers WHERE assignment_id = a.id ORDER BY roster_row_no)) AS wearers
+             (SELECT json_group_array(roster_row_no) FROM (SELECT roster_row_no FROM prd_assignment_wearers WHERE assignment_id = a.id ORDER BY roster_row_no)) AS wearers,
+             (SELECT json_group_array(json_object('rowNo', roster_row_no, 'pieces', pieces)) FROM (SELECT roster_row_no, pieces FROM prd_assignment_wearers WHERE assignment_id = a.id AND pieces IS NOT NULL ORDER BY roster_row_no)) AS wearerPieces
            FROM prd_assignments a WHERE document_id = ? ORDER BY row_no`,
         )
-        .all(documentId) as (Omit<Assignment, 'rework' | 'rateReason' | 'correctionOf' | 'repeatReason' | 'wearers'> & { rateReason: string | null; correctionOf: string | null; repeatReason: string | null; workDate: string; wearers: string })[]
+        .all(documentId) as (Omit<Assignment, 'rework' | 'rateReason' | 'correctionOf' | 'repeatReason' | 'wearers' | 'wearerPieces'> & { rateReason: string | null; correctionOf: string | null; repeatReason: string | null; workDate: string; wearers: string; wearerPieces: string })[]
     );
-    const rows = stored.map(({ rateReason, correctionOf, repeatReason, workDate: _, wearers, ...r }): Assignment => ({
-      ...r,
-      ...((JSON.parse(wearers) as number[]).length > 0 ? { wearers: JSON.parse(wearers) as number[] } : {}),
-      ...(r.kind === 'rework' ? { rework: true as const } : {}),
-      ...(rateReason ? { rateReason } : {}),
-      ...(correctionOf ? { correctionOf } : {}),
-      ...(repeatReason ? { repeatReason } : {}),
-    }));
+    const rows = stored.map(({ rateReason, correctionOf, repeatReason, workDate: _, wearers, wearerPieces: each, ...r }): Assignment => {
+      const ticked = JSON.parse(wearers) as number[];
+      const pieces = JSON.parse(each) as { rowNo: number; pieces: number }[];
+      return {
+        ...r,
+        ...(ticked.length > 0 ? { wearers: ticked } : {}),
+        // Several wearers on a work row: the pieces each had done (one wearer: the row's pieces).
+        ...(r.kind === 'work' && ticked.length > 1 && pieces.length > 0 ? { wearerPieces: pieces } : {}),
+        ...(r.kind === 'rework' ? { rework: true as const } : {}),
+        ...(rateReason ? { rateReason } : {}),
+        ...(correctionOf ? { correctionOf } : {}),
+        ...(repeatReason ? { repeatReason } : {}),
+      };
+    });
     const jo = jobOrderRef(db, e.jobOrderId);
     return {
       jobOrderId: e.jobOrderId,
@@ -379,6 +402,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         ...(r.correctionOf ? { correctionOf: r.correctionOf } : {}),
         ...(r.repeatReason ? { repeatReason: r.repeatReason } : {}),
         ...(r.wearers ? { wearers: r.wearers } : {}),
+        ...(r.wearerPieces ? { wearerPieces: r.wearerPieces } : {}),
         ...(r.part !== 'whole' && r.kind !== 'correction' ? { part: r.part as 'upper' | 'lower' } : {}),
       })),
       ...(doc.overCapReason ? { overCapReason: doc.overCapReason } : {}),

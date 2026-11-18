@@ -51,6 +51,32 @@ it('production does not go on with more pieces than are ready on the step, or mo
   expect(pre).toHaveBeenCalledTimes(1); // 6 rework, 5 sent back
 });
 
+it('with two wearers ticked, each has a pieces box and the row adds them up (the owner request, Nov 2026)', async () => {
+  const pre = vi.spyOn(api, 'preview').mockResolvedValue(preview);
+  const roster = [{ rowNo: 1, wearerName: 'Sample Team A', size: 'L', qty: 8 }, { rowNo: 2, wearerName: 'Sample Team B', size: 'M', qty: 6 }, { rowNo: 3, wearerName: 'Sample Coach', size: 'XL', qty: 1 }];
+  const teams = { ...noRework, lines: [{ ...noRework.lines[0]!, qty: 15, roster, route: [{ ...noRework.lines[0]!.route![0]!, pieces: 0, availablePieces: 15, doneWearers: [], partlyDone: {} }] }] } as unknown as PrdJob;
+  const f = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [{ id: 'e1', name: 'Sample Tailor' }], 'jo1', teams, 1, [{ ...emptyRow('1'), employeeId: 'e1' }]]);
+  f.find('aria-label', 'Row 1 wearer Sample Team A').props.onChange({ target: { checked: true } });
+  expect(f.render().some((n) => n.props['aria-label'] === 'Row 1 pieces of Sample Team A')).toBe(false); // one wearer: the row's pieces box
+  expect(f.find('aria-label', 'Row 1 pieces').props.value).toBe('8');
+  f.find('aria-label', 'Row 1 wearer Sample Team B').props.onChange({ target: { checked: true } });
+  f.find('aria-label', 'Row 1 wearer Sample Coach').props.onChange({ target: { checked: true } });
+  expect(f.find('aria-label', 'Row 1 pieces').props.value).toBe('15');
+  expect(f.find('aria-label', 'Row 1 pieces').props.readOnly).toBe(true);
+  expect(f.render().some((n) => n.props['aria-label'] === 'Row 1 pieces of Sample Coach')).toBe(false); // one piece: no box
+  change(f.find('aria-label', 'Row 1 pieces of Sample Team A'), '3');
+  change(f.find('aria-label', 'Row 1 pieces of Sample Team B'), '2');
+  expect(f.find('aria-label', 'Row 1 pieces').props.value).toBe('6');
+  f.find('children', 'Record').props.onClick();
+  await Promise.resolve();
+  expect(pre).toHaveBeenLastCalledWith('prd.entry', expect.objectContaining({ rows: [{ lineNo: 1, employeeId: 'e1', pieces: 6, wearers: [1, 2, 3], wearerPieces: [{ rowNo: 1, pieces: 3 }, { rowNo: 2, pieces: 2 }] }] }));
+  // More than a wearer has left does not go on.
+  change(f.find('aria-label', 'Row 1 pieces of Sample Team B'), '7');
+  pre.mockClear();
+  f.find('children', 'Record').props.onClick();
+  expect(pre).not.toHaveBeenCalled();
+});
+
 it('rework offers only what was sent back, with the reason (the owner request, Oct 2026)', () => {
   vi.spyOn(api, 'preview').mockResolvedValue(preview);
   const sent = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1, [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2', rework: true }]]);

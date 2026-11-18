@@ -525,7 +525,7 @@ function RecordSheet({ job, line, step, left: lineLeft, onClose, onSaved }: { jo
             <p className="text-sm font-extrabold">Who were they for, and how many?</p>
             <button type="button" onClick={takeAll} className="shrink-0 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold">All left</button>
           </div>
-          <p className="text-xs font-semibold text-slate-500">Tap a name for all their pieces, or use − and +.</p>
+          <p className="text-xs font-semibold text-slate-500">Tap a name for all their pieces, or type how many (or use − and +).</p>
           <ul className="max-h-[42vh] space-y-2 overflow-y-auto">
             {/* Those with pieces to do first; done or not ready yet below. */}
             {[...line.roster].sort((x, y) => Number(!(ready(x.rowNo) && free(x.rowNo, x.qty))) - Number(!(ready(y.rowNo) && free(y.rowNo, y.qty)))).map((w) => {
@@ -543,7 +543,10 @@ function RecordSheet({ job, line, step, left: lineLeft, onClose, onSaved }: { jo
                   </button>
                   {max > 0 && <>
                     <button type="button" aria-label={`One less for ${name}`} disabled={n === 0} onClick={() => count(w.rowNo, n - 1, max)} className="size-11 rounded-xl bg-white text-2xl font-bold shadow-sm disabled:opacity-40">−</button>
-                    <span className="w-7 text-center text-xl font-extrabold tabular-nums" aria-label={`${n} for ${name}`}>{n}</span>
+                    {/* Typed too: a wearer of 26 or 41 pieces is too many taps (the owner's request, Nov 2026). At most what they have left. */}
+                    <input aria-label={`Pieces for ${name}`} inputMode="numeric" enterKeyHint="done" value={n || ''} placeholder="0"
+                      onChange={(e) => count(w.rowNo, Number(e.target.value.replace(/\D/g, '').slice(0, 5)) || 0, max)} onFocus={(e) => e.target.select()}
+                      className="h-11 w-14 rounded-xl border border-slate-300 bg-white text-center text-xl font-extrabold tabular-nums text-slate-900 placeholder:text-slate-300" />
                     <button type="button" aria-label={`One more for ${name}`} disabled={n >= max} onClick={() => count(w.rowNo, n + 1, max)} className="size-11 rounded-xl bg-indigo-600 text-2xl font-bold text-white disabled:opacity-40">+</button>
                   </>}
                 </li>

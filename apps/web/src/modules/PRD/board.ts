@@ -164,12 +164,24 @@ export function useBoardRefresh<T>(read: () => Promise<T>) {
 }
 
 /** `wearers`: the line's wearers (roster rows) this row finished; its pieces are then theirs. `part`: on a set, the upper or the lower part. */
-export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }
+/** `wearerPieces`: with several wearers ticked on a work row, the pieces typed for each (roster row → as typed). */
+export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string; wearers?: number[]; wearerPieces?: Record<number, string>; part?: 'upper' | 'lower' }
 export const emptyRow = (lineNo = ''): EntryRow => ({ lineNo, employeeId: '', pieces: '', rework: false, rate: '', rateReason: '' });
+
+/** A wearer's pieces on a row with several ticked: as typed, or all they have left. NaN when what is typed is not a number. */
+export function wearerNow(left: number, typed: string | undefined): number {
+  const t = (typed ?? '').trim();
+  return t === '' ? left : /^\d{1,5}$/.test(t) ? Number(t) : NaN;
+}
+/** The pieces typed per wearer that go to the server: work rows with several wearers ticked, each a whole number. */
+function typedWearers(r: EntryRow): { rowNo: number; pieces: number }[] {
+  if (r.rework || (r.wearers?.length ?? 0) < 2) return [];
+  return (r.wearers ?? []).flatMap((n) => { const t = (r.wearerPieces?.[n] ?? '').trim(); return /^\d{1,5}$/.test(t) && Number(t) >= 1 ? [{ rowNo: n, pieces: Number(t) }] : []; });
+}
 
 /** Typed rows -> entry rows for the server. Blank rows are left out; a typed rate goes with its reason. */
 export function rowsToInput(rows: EntryRow[]) {
-  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] = [];
+  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; wearerPieces?: { rowNo: number; pieces: number }[]; part?: 'upper' | 'lower' }[] = [];
   const errors: string[] = [];
   rows.forEach((r, i) => {
     if (!r.employeeId && !r.pieces.trim()) return;
@@ -183,6 +195,7 @@ export function rowsToInput(rows: EntryRow[]) {
     if (r.rate.trim() && !r.rateReason.trim()) errors.push(`${at}: say why this rate is typed.`);
     const repeat = r.rework ? '' : (r.repeatReason ?? '').trim();
     if (repeat && repeat.length < 5) errors.push(`${at}: say in at least 5 characters why this is a different sheet.`);
+    const each = typedWearers(r);
     out.push({
       lineNo: Number(r.lineNo),
       employeeId: r.employeeId,
@@ -192,6 +205,7 @@ export function rowsToInput(rows: EntryRow[]) {
       ...(r.rate.trim() && r.rateReason.trim() ? { rateReason: r.rateReason.trim() } : {}),
       ...(repeat ? { repeatReason: repeat } : {}),
       ...(r.wearers && r.wearers.length > 0 ? { wearers: [...r.wearers].sort((a, b) => a - b) } : {}), // on rework: the wearers sent back
+      ...(each.length > 0 ? { wearerPieces: each } : {}), // the others: all they have left
       ...(r.part ? { part: r.part } : {}),
     });
   });

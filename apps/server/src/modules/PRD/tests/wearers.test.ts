@@ -114,3 +114,28 @@ it("records part of a wearer's pieces: 3 of 8 now, the 5 left later; the wearer 
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 6, wearers: [1, 2] }]));
   expect(await step(SEWING)).toMatchObject({ doneWearers: [1, 2], partlyDone: {} });
 });
+
+it('records part of several wearers on one row: the pieces given for each, the others all they have left (the owner request, Nov 2026)', async () => {
+  const roster = [['Team A', 8], ['Team B', 6], ['Coach', 1]].map(([name, qty]) => ({ name, sizeMode: 'preset', size: 'L', qty }));
+  const lines = [{ kind: 'made_to_order', description: 'Jersey', qty: 15, unitPriceCents: 30_000, discountCents: 0, roster }];
+  const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 450_000 }, idem());
+  expect(r.statusCode, r.body).toBe(200);
+  const jo = r.json().id as string;
+  expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+  const step = async () => ((await production.get(`/api/prd/jobs/${jo}`)).json().lines[0].route as { id: number; doneWearers: number[]; partlyDone: Record<string, number> }[]).find((s) => s.id === SEWING)!;
+
+  // 3 of Team A, 2 of Team B and the coach: 6 pieces on one row.
+  const row = { lineNo: 1, employeeId: w.sewer1, wearers: [1, 2, 3] };
+  expect(await codes(entry(jo, [{ ...row, pieces: 15, wearerPieces: [{ rowNo: 1, pieces: 3 }, { rowNo: 2, pieces: 2 }] }]))).toEqual(['WEARERS_PIECES']);
+  expect(await codes(entry(jo, [{ ...row, pieces: 12, wearerPieces: [{ rowNo: 1, pieces: 9 }, { rowNo: 2, pieces: 2 }] }]))).toEqual(['WEARER_PIECES_LEFT']);
+  expect(await codes(entry(jo, [{ ...row, pieces: 4, wearerPieces: [{ rowNo: 4, pieces: 3 }] }]))).toContain('WEARER_PIECES_ROW');
+  const first = await record(entry(jo, [{ ...row, pieces: 6, wearerPieces: [{ rowNo: 1, pieces: 3 }, { rowNo: 2, pieces: 2 }] }]));
+  expect(await step()).toMatchObject({ doneWearers: [3], partlyDone: { 1: 3, 2: 2 } });
+  // The entry keeps each one's pieces, so Edit sends them back as they were.
+  expect((await production.get(`${PE}/${first.id}`)).json().input.rows[0].wearerPieces).toEqual([{ rowNo: 1, pieces: 3 }, { rowNo: 2, pieces: 2 }, { rowNo: 3, pieces: 1 }]);
+
+  // The rest of both teams: 9 pieces with nothing given (all they have left), and Sewing is all done.
+  expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 10, wearers: [1, 2], wearerPieces: [{ rowNo: 2, pieces: 5 }] }]))).toContain('WEARER_PIECES_LEFT');
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 9, wearers: [1, 2] }]));
+  expect(await step()).toMatchObject({ doneWearers: [1, 2, 3], partlyDone: {} });
+});
