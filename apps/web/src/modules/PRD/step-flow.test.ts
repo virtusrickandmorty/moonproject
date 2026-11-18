@@ -36,6 +36,12 @@ describe('wearers ticked on Record pieces', () => {
     expect(rowsToInput([{ ...row, rework: true, rate: '20.00', rateReason: 'Pasubra on a seam' }]).rows[0]!.wearers).toEqual([1, 4]);
     expect(rowsToInput([{ ...row, wearers: [] }]).rows[0]).not.toHaveProperty('wearers');
   });
+  it('with several wearers, sends the pieces typed for each (the others take all they have left; the owner request, Nov 2026)', () => {
+    const row = { ...emptyRow('1'), employeeId: 'e1', pieces: '9', wearers: [1, 2], wearerPieces: { 1: '3', 2: '' } };
+    expect(rowsToInput([row]).rows).toEqual([{ lineNo: 1, employeeId: 'e1', pieces: 9, wearers: [1, 2], wearerPieces: [{ rowNo: 1, pieces: 3 }] }]);
+    expect(rowsToInput([{ ...row, wearers: [1] }]).rows[0]).not.toHaveProperty('wearerPieces'); // one wearer: the row's pieces
+    expect(rowsToInput([{ ...row, rework: true, rate: '20', rateReason: 'Pasubra' }]).rows[0]).not.toHaveProperty('wearerPieces');
+  });
 });
 
 describe('sets on the board and on Record pieces', () => {
