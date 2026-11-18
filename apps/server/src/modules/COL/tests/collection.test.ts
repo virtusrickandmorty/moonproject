@@ -295,7 +295,11 @@ describe('collection rules (PLAN E5, D4)', () => {
     expect((await collect(pay(jo, 100_000, '0301'), 100_000)).statusCode).toBe(200);
     expect(await issues(pay(jo, 100_000, '301'))).toEqual(['CR_USED']);
     expect((await collect(pay(jo, 100_000, '301'), 100_000)).statusCode).toBe(422);
-    for (const crNumber of ['', '0', 'A-12', '12.5']) expect((await collect(pay(jo, 100_000, crNumber), 100_000)).statusCode, crNumber).toBe(400);
+    // Empty is not a number at all; the others are refused by the collection's own check (a BIR CR is digits only; letters
+    // are for an internal receipt, the owner's request, Nov 2026).
+    expect((await collect(pay(jo, 100_000, ''), 100_000)).statusCode).toBe(400);
+    for (const crNumber of ['0', 'A-12', '12.5']) expect((await collect(pay(jo, 100_000, crNumber), 100_000)).statusCode, crNumber).toBe(422);
+    expect(await issues(pay(jo, 100_000, 'A-12'))).toEqual(['CR_NUMBER']);
   });
 
   it('applies only to recorded JOs of this customer, once each, up to their balance due', async () => {

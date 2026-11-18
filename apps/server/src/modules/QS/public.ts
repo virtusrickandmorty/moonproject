@@ -1,5 +1,6 @@
 /** Read-only QS contract for other modules (COL, JO, DASH, RPT). Callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
+import { internalKey, type Paper } from '@moonproject/shared';
 import type { DocTypeDef } from '../../engine/documents/registry.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
@@ -15,15 +16,16 @@ export function saleRef(db: Db, id: string): SaleRef | undefined {
 }
 
 /** The quick sale that used a booklet invoice number, cancelled ones included ("0501" and "501" are the same paper). */
-export function saleByInvoiceNumber(db: Db, invoiceNumber: string): { number: string; status: string } | undefined {
-  return db.prepare(`${SALE} WHERE CAST(s.invoice_number AS INTEGER) = CAST(? AS INTEGER)`).get(invoiceNumber) as SaleRef | undefined;
+export function saleByInvoiceNumber(db: Db, invoiceNumber: string, paper: Paper = 'bir'): { number: string; status: string } | undefined {
+  if (paper === 'internal') return db.prepare(`${SALE} WHERE s.paper = 'internal' AND UPPER(TRIM(s.invoice_number)) = ?`).get(internalKey(invoiceNumber)) as SaleRef | undefined;
+  return db.prepare(`${SALE} WHERE s.paper = 'bir' AND CAST(s.invoice_number AS INTEGER) = CAST(? AS INTEGER)`).get(invoiceNumber) as SaleRef | undefined;
 }
 
 /** Booklet invoice numbers quick sales used between two numbers, cancelled ones included (TAX's booklet usage report). */
 export function saleInvoiceNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
   return db
     .prepare(`SELECT CAST(s.invoice_number AS INTEGER) AS n, d.number, d.status FROM qs_sales s JOIN documents d ON d.id = s.document_id
-              WHERE CAST(s.invoice_number AS INTEGER) BETWEEN ? AND ?`)
+              WHERE s.paper = 'bir' AND CAST(s.invoice_number AS INTEGER) BETWEEN ? AND ?`)
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
 }
 

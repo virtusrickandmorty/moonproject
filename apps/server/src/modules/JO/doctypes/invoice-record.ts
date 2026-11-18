@@ -23,7 +23,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { allocate, formatPeso, vatFromGross, type Issue } from '@moonproject/shared';
+import { PAPERS, allocate, formatPeso, internalKey, paperNumberProblem, paperWords, vatFromGross, type Issue, type Paper } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
@@ -48,8 +48,10 @@ export const invoiceRecordInput = z
     releaseId: z.uuid(),
     // Earlier releases of the same job order with no invoice yet, on this invoice too (the owner's request, Nov 2026).
     alsoReleaseIds: z.array(z.uuid()).min(1).max(50).optional(),
-    // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7).
-    invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
+    // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7). Or from the internal
+    // booklet (`paper`, the owner's request, Nov 2026), letters too. validate checks the number for its paper.
+    invoiceNumber: z.string().trim().min(1, 'Type the number printed on the invoice.').max(20),
+    paper: z.enum(PAPERS).optional(), // absent: BIR
     note: z.string().trim().min(1).max(500).optional(),
     // The cancelled invoice record this one records again, with its booklet number (cancelled by mistake).
     againOf: z.uuid().optional(),
@@ -128,10 +130,10 @@ export const invoiceCovering = (db: Db, releaseId: string) =>
 
 /** An invoice record to record again: its number, status, booklet number, releases, and the record that already did, if any. */
 export function cancelledRecord(db: Db, id: string) {
-  const r = db.prepare(`SELECT d.number, d.status, d.doc_type AS docType, i.invoice_number AS invoiceNumber, i.release_id AS releaseId,
+  const r = db.prepare(`SELECT d.number, d.status, d.doc_type AS docType, i.invoice_number AS invoiceNumber, i.paper, i.release_id AS releaseId,
       (SELECT n.number FROM jo_invoice_records a JOIN documents n ON n.id = a.document_id WHERE a.again_of = d.id) AS againBy
     FROM documents d JOIN jo_invoice_records i ON i.document_id = d.id WHERE d.id = ?`).get(id) as
-    { number: string; status: string; docType: string; invoiceNumber: string; releaseId: string; againBy: string | null } | undefined;
+    { number: string; status: string; docType: string; invoiceNumber: string; paper: Paper; releaseId: string; againBy: string | null } | undefined;
   if (!r) return undefined;
   const also = db.prepare('SELECT release_id FROM jo_invoice_record_releases WHERE document_id = ?').pluck().all(id) as string[];
   return { ...r, releaseIds: [r.releaseId, ...also] };
@@ -142,11 +144,15 @@ export const linesOfReleases = (db: Db, ids: readonly string[]): ReleaseLine[] =
   ids.flatMap((id) => (releaseHeader(db, id) ? releaseDoc.load(db, id).lines : []));
 
 /** The document that used a booklet invoice number, cancelled ones included. Releases, quick sales and asset sales (FA) share one booklet. */
-export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { id?: string; number: string; status: string } | undefined {
+export function invoiceNumberUsedBy(db: Db, invoiceNumber: string, paper: Paper = 'bir'): { id?: string; number: string; status: string } | undefined {
+  // An internal number is used once among internal invoices (records and quick sales); downpayment and asset sale
+  // invoices are BIR only.
+  const same = paper === 'internal' ? `i.paper = 'internal' AND UPPER(TRIM(i.invoice_number)) = ?` : `i.paper = 'bir' AND CAST(i.invoice_number AS INTEGER) = CAST(? AS INTEGER)`;
   const own = db
-    .prepare(`SELECT d.id, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE CAST(i.invoice_number AS INTEGER) = CAST(? AS INTEGER)
+    .prepare(`SELECT d.id, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE ${same}
               ORDER BY d.status = 'posted' DESC, d.posted_at DESC LIMIT 1`)
-    .get(invoiceNumber) as { id: string; number: string; status: string } | undefined;
+    .get(paper === 'internal' ? internalKey(invoiceNumber) : invoiceNumber) as { id: string; number: string; status: string } | undefined;
+  if (paper === 'internal') return own ?? saleByInvoiceNumber(db, invoiceNumber, 'internal');
   return own ?? dpInvoiceUsedBy(db, invoiceNumber) ?? saleByInvoiceNumber(db, invoiceNumber) ?? assetSaleByInvoiceNumber(db, invoiceNumber);
 }
 
@@ -154,7 +160,7 @@ export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { id?: strin
 export function invoiceNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
   const rows = db
     .prepare(`SELECT CAST(i.invoice_number AS INTEGER) AS n, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id
-              WHERE CAST(i.invoice_number AS INTEGER) BETWEEN ? AND ? ORDER BY d.status = 'posted' DESC, d.posted_at DESC`)
+              WHERE i.paper = 'bir' AND CAST(i.invoice_number AS INTEGER) BETWEEN ? AND ? ORDER BY d.status = 'posted' DESC, d.posted_at DESC`)
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
   // A number recorded again counts once: as its recorded record, or its latest cancelled one.
   const seen = new Set<number>();
@@ -222,20 +228,27 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       else if (again.status !== 'cancelled') error('againOf', 'AGAIN_NOT_CANCELLED', `${again.number} is not cancelled, so there is nothing to record again.`);
       else if (again.againBy) error('againOf', 'AGAIN_DONE', `${again.number} was already recorded again as ${again.againBy}.`);
       else {
-        if (Number(again.invoiceNumber) !== Number(doc.invoiceNumber)) error('invoiceNumber', 'AGAIN_NUMBER', `Recording ${again.number} again keeps its invoice no. ${again.invoiceNumber}.`);
+        const same = (again.paper ?? 'bir') === (doc.paper ?? 'bir')
+          && (doc.paper === 'internal' ? internalKey(again.invoiceNumber) === internalKey(doc.invoiceNumber) : Number(again.invoiceNumber) === Number(doc.invoiceNumber));
+        if (!same) error('invoiceNumber', 'AGAIN_NUMBER', `Recording ${again.number} again keeps its ${paperWords(again.paper, again.invoiceNumber, 'invoice')}.`);
         const now = [doc.releaseId, ...(doc.alsoReleaseIds ?? [])];
         if (!again.releaseIds.every((id) => now.includes(id))) error('releaseId', 'AGAIN_RELEASES', `Recording ${again.number} again keeps every release it was for. Tick them all; you may add others of the same job order.`);
       }
       if (!doc.note) error('note', 'AGAIN_NOTE', 'Say why the invoice is recorded again, like "cancelled by mistake".');
       if (!ctx.can('jo.invoice_cancel')) error('againOf', 'AGAIN_PERMISSION', 'Only someone who may cancel invoice records can record one again.');
     }
-    const used = invoiceNumberUsedBy(ctx.db, doc.invoiceNumber);
+    const paper = doc.paper ?? 'bir';
+    const malformed = paperNumberProblem(paper, doc.invoiceNumber, 'invoice');
+    if (malformed) error('invoiceNumber', 'INVOICE_NUMBER', malformed);
+    const used = malformed ? undefined : invoiceNumberUsedBy(ctx.db, doc.invoiceNumber, paper);
     const restoring = !!again && again.status === 'cancelled' && !again.againBy && used?.id === doc.againOf;
     if (used && !restoring) {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
-      error('invoiceNumber', 'INVOICE_USED', `Invoice no. ${doc.invoiceNumber} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
+      const words = paperWords(paper, doc.invoiceNumber, 'invoice');
+      error('invoiceNumber', 'INVOICE_USED', `${words[0]!.toUpperCase()}${words.slice(1)} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
     }
-    const booklet = bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber');
+    // Only BIR invoices come from an ATP booklet.
+    const booklet = paper === 'bir' && !malformed ? bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber') : null;
     if (booklet) issues.push(booklet);
     issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     if (rel && doc.grossCents <= 0) error('releaseId', 'NOTHING_TO_INVOICE', `${doc.releaseNumber} released nothing with a price, so there is nothing to invoice.`);
@@ -246,12 +259,12 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   persist(db, doc, h) {
     db.prepare(
       `INSERT INTO jo_invoice_records (document_id, release_id, job_order_id, customer_id, customer_name, invoice_number, vat_rate_bp, deposit_vat_mode,
-         list_cents, discount_cents, gross_cents, vat_cents, discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, deposit_applied_cents, note, again_of)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         list_cents, discount_cents, gross_cents, vat_cents, discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, deposit_applied_cents, note, again_of, paper)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       h.documentId, doc.releaseId, doc.jobOrderId, doc.customerId, doc.customerName, doc.invoiceNumber, doc.vatRateBp, doc.depositVatMode,
       doc.listCents, doc.discountCents, doc.grossCents, doc.vatCents, doc.discountNetCents,
-      doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.depositAppliedCents + doc.dpAppliedCents, doc.note ?? null, doc.againOf ?? null,
+      doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.depositAppliedCents + doc.dpAppliedCents, doc.note ?? null, doc.againOf ?? null, doc.paper ?? 'bir',
     );
     const also = db.prepare('INSERT INTO jo_invoice_record_releases (document_id, release_id) VALUES (?, ?)');
     for (const id of doc.alsoReleaseIds ?? []) also.run(h.documentId, id);
@@ -275,9 +288,9 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     // A class's own sale can come out a centavo below zero when the downpayment invoices' VAT rounded down: it is then a debit.
     const credit = (cents: number) => (cents >= 0 ? { creditCents: cents } : { debitCents: -cents });
     return {
-      memo: `Sale to ${doc.customerName}, invoice no. ${doc.invoiceNumber} (${doc.jobOrderNumber}, ${(doc.releaseNumbers ?? [doc.releaseNumber]).join(', ')})`,
+      memo: `Sale to ${doc.customerName}, ${paperWords(doc.paper, doc.invoiceNumber, 'invoice')} (${doc.jobOrderNumber}, ${(doc.releaseNumbers ?? [doc.releaseNumber]).join(', ')})`,
       lines: [
-        { account: { role: 'AR_TRADE' }, party, ref, debitCents: doc.grossCents - doc.dpAppliedCents, memo: `Invoice no. ${doc.invoiceNumber}` },
+        { account: { role: 'AR_TRADE' }, party, ref, debitCents: doc.grossCents - doc.dpAppliedCents, memo: doc.paper === 'internal' ? `Internal invoice ${doc.invoiceNumber}` : `Invoice no. ${doc.invoiceNumber}` },
         { account: { role: 'SALES_DISCOUNTS' }, party, debitCents: doc.discountNetCents, memo: 'Discount shown on the invoice' },
         ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, ...credit(doc.salesCents[k] - doc.dpSalesCents[k]) })),
         { account: { role: 'OUTPUT_VAT' }, party, ...credit(doc.vatCents - doc.dpVatAppliedCents) },
@@ -305,12 +318,13 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
         `SELECT release_id AS releaseId, invoice_number AS invoiceNumber, note, vat_rate_bp AS vatRateBp, list_cents AS listCents, discount_cents AS discountCents,
            gross_cents AS grossCents, vat_cents AS vatCents, discount_net_cents AS discountNetCents, sales_mto_cents AS mto, sales_rtw_cents AS rtw,
            sales_service_cents AS service, deposit_applied_cents AS depositAppliedCents, job_order_id AS jobOrderId, customer_id AS customerId,
-           customer_name AS customerName, deposit_vat_mode AS depositVatMode, again_of AS againOf
+           customer_name AS customerName, deposit_vat_mode AS depositVatMode, again_of AS againOf, paper AS paperOf
          FROM jo_invoice_records WHERE document_id = ?`,
       )
-      .get(documentId) as (Omit<InvoiceRecord, 'note' | 'againOf'> & { note: string | null; againOf: string | null; mto: number; rtw: number; service: number }) | undefined;
+      .get(documentId) as (Omit<InvoiceRecord, 'note' | 'againOf' | 'paper'> & { note: string | null; againOf: string | null; paperOf: Paper; mto: number; rtw: number; service: number }) | undefined;
     if (!r) throw new Error(`Invoice record ${documentId} not found`);
-    const { note, againOf, mto, rtw, service, ...rest } = r;
+    const { note, againOf, paperOf, mto, rtw, service, ...base } = r;
+    const rest = { ...base, ...(paperOf === 'internal' ? { paper: paperOf } : {}) };
     const againBy = db.prepare('SELECT d.id, d.number FROM jo_invoice_records a JOIN documents d ON d.id = a.document_id WHERE a.again_of = ?')
       .get(documentId) as { id: string; number: string } | undefined;
     const rel = releaseDoc.load(db, r.releaseId);
@@ -345,7 +359,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     };
   },
 
-  toInput: ({ releaseId, alsoReleaseIds, invoiceNumber, note }) => ({ releaseId, ...(alsoReleaseIds?.length ? { alsoReleaseIds } : {}), invoiceNumber, ...(note ? { note } : {}) }),
+  toInput: ({ releaseId, alsoReleaseIds, invoiceNumber, paper, note }) => ({ releaseId, ...(alsoReleaseIds?.length ? { alsoReleaseIds } : {}), invoiceNumber, ...(paper === 'internal' ? { paper } : {}), ...(note ? { note } : {}) }),
 
   summary(doc) {
     const numbers = doc.releaseNumbers ?? [doc.releaseNumber];

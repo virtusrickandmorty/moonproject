@@ -11,6 +11,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { api, ApiError, newIdempotencyKey, type DocTypeInfo, type JoStatus, type Me, type ReleasePreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
+import { PaperPick } from '../../components/PaperNumber.tsx';
 import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -246,7 +247,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         )}
         {free ? <Panel title="Invoice"><p className="text-sm text-slate-600">Nothing to charge on this release, so no invoice is needed.</p></Panel> : <Panel title="Invoice">
           <Field label="Invoice number (from the booklet)" required={!v.invoiceToFollow} hint="VAT sellers write an invoice for every sale.">
-            <input inputMode="numeric" disabled={v.invoiceToFollow} className={`${inputClass} max-w-40`} value={v.invoiceNumber} onChange={(e) => set({ invoiceNumber: e.target.value })} />
+            <input inputMode={v.invoicePaper === 'internal' ? 'text' : 'numeric'} disabled={v.invoiceToFollow} className={`${inputClass} max-w-40`} value={v.invoiceNumber} onChange={(e) => set({ invoiceNumber: e.target.value })} />
+            <PaperPick what="invoice" paper={v.invoicePaper ?? 'bir'} onPaper={(p) => set({ invoicePaper: p })} disabled={v.invoiceToFollow} />
           </Field>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={v.invoiceToFollow} onChange={(e) => set({ invoiceToFollow: e.target.checked })} />

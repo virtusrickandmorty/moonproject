@@ -26,6 +26,7 @@ const deliveryBody = z.object({ delivery: z.unknown(), expectedTotalCents: z.num
 export const invoiceFor = (d: Delivery, number?: string) => ({
   customerId: d.customerId,
   invoiceNumber: d.invoiceNumber,
+  ...(d.paper === 'internal' ? { paper: d.paper } : {}),
   termsDays: d.termsDays,
   lines: [
     ...d.lines.map((l) => ({ kind: l.kind, description: itemLabel(l), qty: l.qty, unitPriceCents: l.unitPriceCents, discountCents: 0 })),

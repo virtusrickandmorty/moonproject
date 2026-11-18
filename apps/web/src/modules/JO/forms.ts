@@ -3,7 +3,7 @@
  * an edit; the buttons on the job order's view; what the collection form starts with for a job order. Pure, so it is
  * tested without a browser; the server works out every figure and checks everything again.
  */
-import { formatPesos, manilaDate, saysSet } from '@moonproject/shared';
+import { INTERNAL_NUMBER, formatPesos, manilaDate, saysSet, type Paper } from '@moonproject/shared';
 import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, JoStatusWearer, WearerPick } from '../../api.ts';
 import type { jobOrderPrefill } from '../QUO/quotation.ts';
 import { cents } from '../COL/money.ts';
@@ -195,6 +195,8 @@ export interface ReleaseValues {
   wearerPieces: Record<number, Record<number, string>>;
   claimedBy: string; idSeen: IdSeen | ''; creditNote: string; creditDueInDays: string; overrideReason: string;
   invoiceNumber: string; invoiceToFollow: boolean; invoiceNote: string;
+  /** The invoice's booklet: BIR when not given (the owner's request, Nov 2026). */
+  invoicePaper?: Paper;
   /** Sent out with nobody claiming it yet: the slip leaves the receiver blank, to sign by hand. */
   forDelivery: boolean;
 }
@@ -259,7 +261,7 @@ export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty
  * Typed values -> the release, its invoice (null = invoice to follow), and what to fix first (`releaseErrors`: the release
  * itself, enough for its preview). Only what is left can be released.
  */
-export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { release: ReleaseInput; invoice: { invoiceNumber: string; note?: string } | null; errors: string[]; releaseErrors: string[] } {
+export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { release: ReleaseInput; invoice: { invoiceNumber: string; paper?: 'internal'; note?: string } | null; errors: string[]; releaseErrors: string[] } {
   const errors: string[] = [];
   if (!v.jobOrderId) errors.push('Pick the job order.');
   const lines: { lineNo: number; qty: number; wearers?: ReleaseWearer[] }[] = [];
@@ -294,7 +296,9 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
   const days = v.creditDueInDays.trim();
   if (days && (!/^\d{1,3}$/.test(days) || Number(days) < 1 || Number(days) > 365)) errors.push('Pay within: type the number of days, 1 to 365.');
   const releaseErrors = [...errors];
-  if (!v.invoiceToFollow && !/^\d+$/.test(v.invoiceNumber.trim())) errors.push('Type the invoice number from the booklet (digits only), or tick "Invoice to follow".');
+  const badInvoice = v.invoiceToFollow ? null : paperNumberError(v.invoicePaper, v.invoiceNumber, 'Type the invoice number from the booklet (digits only), or tick "Invoice to follow".',
+    'Type the internal invoice number (letters and digits, up to 20), or tick "Invoice to follow".');
+  if (badInvoice) errors.push(badInvoice);
   const release: ReleaseInput = {
     jobOrderId: v.jobOrderId,
     lines,
@@ -305,20 +309,30 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
     ...(days && Number(days) >= 1 ? { creditDueInDays: Number(days) } : {}),
     ...optional('overrideReason', v.overrideReason),
   };
-  const invoice = v.invoiceToFollow ? null : { invoiceNumber: v.invoiceNumber.trim(), ...optional('note', v.invoiceNote) };
+  const invoice = v.invoiceToFollow ? null : { invoiceNumber: v.invoiceNumber.trim(), ...(v.invoicePaper === 'internal' ? { paper: 'internal' as const } : {}), ...optional('note', v.invoiceNote) };
   return { release, invoice, errors, releaseErrors };
 }
 
 /* ---------- Invoice record ---------- */
 
+/**
+ * A typed booklet number for its paper (the owner's request, Nov 2026): BIR digits only, as before; internal ones letters
+ * too. Null when fine; else the words, `bir` being the BIR wording each form already used.
+ */
+export function paperNumberError(paper: Paper | undefined, typed: string, bir: string, internal: string): string | null {
+  return paper === 'internal' ? (INTERNAL_NUMBER.test(typed.trim()) ? null : internal) : /^\d+$/.test(typed.trim()) ? null : bir;
+}
+
 /** `also`: earlier releases of the same job order on this invoice too (the owner's request, Nov 2026). */
-export function invoiceInput(v: { releaseId: string; invoiceNumber: string; note: string; also?: string[]; againOf?: string }): { input: { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; note?: string; againOf?: string }; errors: string[] } {
+export function invoiceInput(v: { releaseId: string; invoiceNumber: string; paper?: Paper; note: string; also?: string[]; againOf?: string }): { input: { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; paper?: 'internal'; note?: string; againOf?: string }; errors: string[] } {
   const errors: string[] = [];
   if (!v.releaseId) errors.push('Pick the release by its number.');
-  if (!/^\d+$/.test(v.invoiceNumber.trim())) errors.push('Type the invoice number from the booklet (digits only).');
+  const bad = paperNumberError(v.paper, v.invoiceNumber, 'Type the invoice number from the booklet (digits only).', 'Type the internal invoice number: letters and digits, up to 20.');
+  if (bad) errors.push(bad);
   // Recording a cancelled invoice again (cancelled by mistake): it says why.
   if (v.againOf && !v.note.trim()) errors.push('Say why the invoice is recorded again, like "cancelled by mistake".');
-  return { input: { releaseId: v.releaseId, ...(v.also?.length ? { alsoReleaseIds: v.also } : {}), invoiceNumber: v.invoiceNumber.trim(), ...optional('note', v.note), ...(v.againOf ? { againOf: v.againOf } : {}) }, errors };
+  return { input: { releaseId: v.releaseId, ...(v.also?.length ? { alsoReleaseIds: v.also } : {}), invoiceNumber: v.invoiceNumber.trim(), ...(v.paper === 'internal' ? { paper: 'internal' as const } : {}),
+    ...optional('note', v.note), ...(v.againOf ? { againOf: v.againOf } : {}) }, errors };
 }
 
 /* ---------- Downpayment invoice (mode C) ---------- */

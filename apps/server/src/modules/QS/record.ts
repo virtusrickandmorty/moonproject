@@ -12,7 +12,7 @@ import { saleDoc } from './doctypes/sale.ts';
  * How the counter was paid: the collection without its customer and applications, which come from the sale. Built on first
  * use: QS's public contract leads here, and COL reads QS's, so COL may still be loading when this file is.
  */
-const makeCounterPayment = () => collectionInput.pick({ crNumber: true, tenders: true, withholding: true, note: true }).strict();
+const makeCounterPayment = () => collectionInput.pick({ crNumber: true, paper: true, tenders: true, withholding: true, note: true }).strict();
 let schema: ReturnType<typeof makeCounterPayment> | undefined;
 export const counterPayment = () => (schema ??= makeCounterPayment());
 export type CounterPayment = z.infer<ReturnType<typeof makeCounterPayment>>;
@@ -21,6 +21,7 @@ export type CounterPayment = z.infer<ReturnType<typeof makeCounterPayment>>;
 export const collectionFor = (sale: { id: string; customerId: string; totalCents: number }, p: CounterPayment): CollectionInput => ({
   customerId: sale.customerId,
   crNumber: p.crNumber,
+  ...(p.paper === 'internal' ? { paper: p.paper } : {}),
   applications: [],
   sales: [{ saleId: sale.id, amountCents: sale.totalCents }],
   tenders: p.tenders,

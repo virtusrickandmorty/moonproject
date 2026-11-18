@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { allocate, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
+import { PAPERS, allocate, formatPeso, manilaDate, paperNumberProblem, paperWords, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
@@ -39,8 +39,10 @@ const lineInput = z
 export const saleInput = z
   .object({
     customerId: z.uuid(), // "Walk-in" is a customer record too
-    // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7).
-    invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
+    // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7). Or from the internal
+    // booklet (`paper`, the owner's request, Nov 2026), letters too. validate checks the number for its paper.
+    invoiceNumber: z.string().trim().min(1, 'Type the number printed on the invoice.').max(20),
+    paper: z.enum(PAPERS).optional(), // absent: BIR
     lines: z.array(lineInput).min(1).max(30),
     note: text(500).optional(),
     // On terms (TPL deliveries): paid that many days after the invoice; the server makes the due date (NR-6).
@@ -88,12 +90,17 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     const error = (field: string, code: string, message: string) => issues.push({ field, code, level: 'error', message });
     const c = customerRef(ctx.db, doc.customerId);
     if (c?.is_active !== 1) error('customerId', 'CUSTOMER', c ? `${c.display_name} is inactive. Pick an active customer.` : 'Pick a customer.');
-    const used = invoiceNumberUsedBy(ctx.db, doc.invoiceNumber);
+    const paper = doc.paper ?? 'bir';
+    const malformed = paperNumberProblem(paper, doc.invoiceNumber, 'invoice');
+    if (malformed) error('invoiceNumber', 'INVOICE_NUMBER', malformed);
+    const used = malformed ? undefined : invoiceNumberUsedBy(ctx.db, doc.invoiceNumber, paper);
     if (used) {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
-      error('invoiceNumber', 'INVOICE_USED', `Invoice no. ${doc.invoiceNumber} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
+      const words = paperWords(paper, doc.invoiceNumber, 'invoice');
+      error('invoiceNumber', 'INVOICE_USED', `${words[0]!.toUpperCase()}${words.slice(1)} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
     }
-    const booklet = bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber');
+    // Only BIR invoices come from an ATP booklet.
+    const booklet = paper === 'bir' && !malformed ? bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber') : null;
     if (booklet) issues.push(booklet);
     for (const l of doc.lines) if (l.amountCents < 0) error(`lines.${l.lineNo - 1}.discountCents`, 'DISCOUNT', `Line ${l.lineNo}: the discount is more than the line amount.`);
     // A website shop item is a ready-made piece; the shop module warns when it is unknown or more than its stock (SHP notices).
@@ -107,11 +114,11 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   persist(db, doc, h) {
     db.prepare(
       `INSERT INTO qs_sales (document_id, customer_id, customer_name, invoice_number, vat_rate_bp, list_cents, discount_cents, gross_cents, vat_cents,
-         discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, sales_delivery_cents, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, sales_delivery_cents, note, paper)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       h.documentId, doc.customerId, doc.customerName, doc.invoiceNumber, doc.vatRateBp, doc.listCents, doc.discountCents, doc.grossCents, doc.vatCents,
-      doc.discountNetCents, doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.deliveryCents, doc.note ?? null,
+      doc.discountNetCents, doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.deliveryCents, doc.note ?? null, doc.paper ?? 'bir',
     );
     const line = db.prepare(
       `INSERT INTO qs_sale_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, amount_cents, product_id, size, colour, delivery_fee)
@@ -128,9 +135,9 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     // The receivable names the sale, so collections pay it by ref. A preview has no header yet and shows the line unnamed.
     const self = header?.documentId;
     return {
-      memo: `Quick sale to ${doc.customerName}, invoice no. ${doc.invoiceNumber}`,
+      memo: `Quick sale to ${doc.customerName}, ${paperWords(doc.paper, doc.invoiceNumber, 'invoice')}`,
       lines: [
-        { account: { role: 'AR_TRADE' }, party, ...(self ? { ref: { documentId: self } } : {}), debitCents: doc.grossCents, memo: `Invoice no. ${doc.invoiceNumber}` },
+        { account: { role: 'AR_TRADE' }, party, ...(self ? { ref: { documentId: self } } : {}), debitCents: doc.grossCents, memo: doc.paper === 'internal' ? `Internal invoice ${doc.invoiceNumber}` : `Invoice no. ${doc.invoiceNumber}` },
         { account: { role: 'SALES_DISCOUNTS' }, party, debitCents: doc.discountNetCents, memo: 'Discount shown on the invoice' },
         ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, creditCents: k === 'service' ? doc.salesCents[k] - doc.deliveryCents : doc.salesCents[k] })),
         { account: { role: 'SALES_DELIVERY' }, party, creditCents: doc.deliveryCents, memo: 'Delivery fee' },
@@ -144,12 +151,13 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
       .prepare(
         `SELECT customer_id AS customerId, customer_name AS customerName, invoice_number AS invoiceNumber, note, vat_rate_bp AS vatRateBp, list_cents AS listCents,
            discount_cents AS discountCents, gross_cents AS grossCents, vat_cents AS vatCents, discount_net_cents AS discountNetCents,
-           sales_mto_cents AS mto, sales_rtw_cents AS rtw, sales_service_cents AS service, sales_delivery_cents AS deliveryCents
+           sales_mto_cents AS mto, sales_rtw_cents AS rtw, sales_service_cents AS service, sales_delivery_cents AS deliveryCents, paper AS paperOf
          FROM qs_sales WHERE document_id = ?`,
       )
-      .get(documentId) as (Omit<Sale, 'note' | 'lines' | 'salesCents' | 'vatableSalesCents' | 'totalCents'> & { note: string | null; mto: number; rtw: number; service: number }) | undefined;
+      .get(documentId) as (Omit<Sale, 'note' | 'lines' | 'salesCents' | 'vatableSalesCents' | 'totalCents' | 'paper'> & { note: string | null; paperOf: 'bir' | 'internal'; mto: number; rtw: number; service: number }) | undefined;
     if (!r) throw new Error(`Quick sale ${documentId} not found`);
-    const { note, mto, rtw, service, ...rest } = r;
+    const { note, paperOf, mto, rtw, service, ...base } = r;
+    const rest = { ...base, ...(paperOf === 'internal' ? { paper: paperOf } : {}) };
     const terms = db.prepare('SELECT terms_days AS termsDays, due_date AS dueDate FROM qs_sale_terms WHERE document_id = ?').get(documentId) as { termsDays: number; dueDate: string } | undefined;
     const lines = db
       .prepare(
@@ -168,7 +176,8 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     };
   },
 
-  toInput: ({ customerId, invoiceNumber, lines, note, termsDays }) => ({
+  toInput: ({ customerId, invoiceNumber, paper, lines, note, termsDays }) => ({
+    ...(paper === 'internal' ? { paper } : {}),
     customerId,
     invoiceNumber,
     lines: lines.map(({ kind, description, qty, unitPriceCents, discountCents, item, deliveryFee }) => ({ kind, description, qty, unitPriceCents, discountCents, ...(item ? { item } : {}), ...(deliveryFee ? { deliveryFee } : {}) })),
@@ -189,7 +198,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     const what = doc.lines.length === 1 ? doc.lines[0]!.description : `${doc.lines.length} lines`;
     const discount = doc.discountCents > 0 ? `, discount ${formatPeso(doc.discountCents)} shown` : '';
     const due = doc.dueDate ? `, due ${doc.dueDate}` : '';
-    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${what}: ${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount})${due}.`;
+    return `This will record ${paperWords(doc.paper, doc.invoiceNumber, 'invoice')} to ${doc.customerName} for ${what}: ${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount})${due}.`;
   },
 
   arbitrary(db) {

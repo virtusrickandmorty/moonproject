@@ -4,10 +4,12 @@
  * Cr sales 4102 and output VAT), so the books and the invoice booklet rules are the same as the Quick Sale screen; each line
  * names its shop item, so the pieces come off the stock (and come back if the sale is cancelled).
  */
-import { formatPesos, parsePesos, type Issue } from '@moonproject/shared';
+import { formatPesos, parsePesos, type Issue, type Paper } from '@moonproject/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, newIdempotencyKey, type CashPlace, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { PaperPick } from '../../components/PaperNumber.tsx';
+import { paperNumberError } from '../JO/forms.ts';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { ProductPicture } from '../../shop/GarmentArt.tsx';
@@ -33,6 +35,7 @@ export function Pos({ me }: { me: Me }) {
   const [warnings, setWarnings] = useState<Issue[]>([]);
   const [done, setDone] = useState<{ id: string; number: string; change: number } | null>(null);
   const [key, setKey] = useState(newIdempotencyKey);
+  const [papers, setPapers] = useState<{ invoice: Paper; cr: Paper }>({ invoice: 'bir', cr: 'bir' }); // the booklets (the owner's request, Nov 2026)
   const { busy, error, run } = useAction();
   // Selling records a quick sale: the POS needs those permissions too, plus seeing the shop's items and the customers.
   const missing = (['shp.view', 'cus.view', 'qs.create', 'qs.post'] as const).filter((k) => !me.permissions.includes(k));
@@ -75,17 +78,17 @@ export function Pos({ me }: { me: Me }) {
   const problems = [
     ...(cart.length ? [] : ['Add at least one piece.']),
     ...(customer ? [] : ['There is no "Walk-in" customer: add one on the Customers screen, or pick a customer.']),
-    ...(/^\d+$/.test(invoiceNumber.trim()) ? [] : ['Type the invoice number from the booklet.']),
-    ...(/^\d+$/.test(crNumber.trim()) ? [] : ['Type the CR number from the booklet.']),
+    ...(paperNumberError(papers.invoice, invoiceNumber, 'Type the invoice number from the booklet.', 'Type the internal invoice number: letters and digits, up to 20.') ?? []),
+    ...(paperNumberError(papers.cr, crNumber, 'Type the CR number from the booklet.', 'Type the internal receipt number: letters and digits, up to 20.') ?? []),
     ...(placeId ? [] : ['Pick where the money went.']),
     ...(isCash && change < 0 ? ['The cash received is less than the total.'] : []),
   ];
   const body = () => ({
-    sale: { customerId: customer!.id, invoiceNumber: invoiceNumber.trim(), lines: cart.map((l) => ({
+    sale: { customerId: customer!.id, invoiceNumber: invoiceNumber.trim(), ...(papers.invoice === 'internal' ? { paper: 'internal' } : {}), lines: cart.map((l) => ({
       kind: 'ready_made', description: `${l.product.name} (${l.colour}, ${l.size})`, qty: l.qty, unitPriceCents: l.product.priceCents, discountCents: 0,
       item: { productId: l.product.id, size: l.size, colour: l.colour } })) },
     // The payment is the sale total; cash given above it goes back as change (QS: never kept as a deposit).
-    payment: { crNumber: crNumber.trim(), tenders: [{ cashPlaceId: placeId!, amountCents: totalCents, ...(!isCash && reference.trim() ? { reference: reference.trim().slice(0, 40) } : {}) }] },
+    payment: { crNumber: crNumber.trim(), ...(papers.cr === 'internal' ? { paper: 'internal' } : {}), tenders: [{ cashPlaceId: placeId!, amountCents: totalCents, ...(!isCash && reference.trim() ? { reference: reference.trim().slice(0, 40) } : {}) }] },
   });
   const record = () => run(async () => {
     const b = body();
@@ -151,8 +154,10 @@ export function Pos({ me }: { me: Me }) {
           <div className="flex justify-between border-t pt-2 text-lg font-bold"><span>Total</span><span className="tabular-nums">{peso(totalCents)}</span></div>
           <p className="text-xs text-slate-500">Prices include VAT. Customer: <b>{customer?.name ?? '—'}</b></p>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Invoice no." required><input className={inputClass} inputMode="numeric" value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} /></Field>
-            <Field label="CR no." required><input className={inputClass} inputMode="numeric" value={crNumber} onChange={(e) => setCr(e.target.value)} /></Field>
+            <Field label="Invoice no." required><input className={inputClass} inputMode={papers.invoice === 'bir' ? 'numeric' : 'text'} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+              <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => setPapers((p) => ({ ...p, invoice }))} /></Field>
+            <Field label="CR no." required><input className={inputClass} inputMode={papers.cr === 'bir' ? 'numeric' : 'text'} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => setPapers((p) => ({ ...p, cr }))} /></Field>
           </div>
           <Field label="Paid by" required>
             <select className={inputClass} value={placeId ?? ''} onChange={(e) => setPlaceId(Number(e.target.value) || null)}>

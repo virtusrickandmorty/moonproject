@@ -9,7 +9,8 @@
  * that is due (ACC-23): its customer, the check in Checks on hand, and its amount on its job orders, oldest due first.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { formatPesos } from '@moonproject/shared';
+import { formatPesos, type Paper } from '@moonproject/shared';
+import { PaperPick } from '../../components/PaperNumber.tsx';
 import { api, ApiError, type CashPlace, type DocHeader, type DocTypeInfo, type OpenItems, type PostDatedCheck, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
@@ -20,13 +21,13 @@ import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx'
 import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
 import { withoutOriginal } from '../../generic/record.tsx';
-import { collectionPreset } from '../JO/forms.ts';
+import { collectionPreset, paperNumberError } from '../JO/forms.ts';
 import type { WithholdingProfile } from '../CUS/withholding.ts';
 import { WITHHOLDING_CHOICES, cashToReceive, emptyWithholding, paymentGross, withholdingRows, type WithholdingRows } from './withholding.ts';
 
 /** Something the customer can pay on; `due` already counts back what the collection being edited paid on it. */
 interface Item { key: string; label: string; date: string; due: number; ref: { jobOrderId: string } | { saleId: string } }
-type Stored = { customerId: string; crNumber: string; applications: { jobOrderId: string; amountCents: number }[]; sales?: { saleId: string; amountCents: number }[]; tenders: TenderInput[];
+type Stored = { customerId: string; crNumber: string; paper?: Paper; applications: { jobOrderId: string; amountCents: number }[]; sales?: { saleId: string; amountCents: number }[]; tenders: TenderInput[];
   withholding?: { cwtCents: number; atc: string; certificate: string; vatWithheldCents?: number }; settleSmallDifference?: boolean; note?: string; postDatedCheckId?: string };
 type StoredDoc = { customerName: string; applications: { jobOrderId: string; jobOrderNumber: string }[]; sales: { saleId: string; saleNumber: string; invoiceNumber: string }[] };
 
@@ -80,6 +81,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [preset, setPreset] = useState<{ key: string; cents: number } | null>(null);
   // From the post-dated checks list: the check, due today or earlier.
   const [pdc, setPdc] = useState<PostDatedCheck | null>(null);
+  const [paper, setPaper] = useState<Paper>('bir'); // the receipt's booklet: BIR or internal (the owner's request, Nov 2026)
   useEffect(() => {
     api.cashPlaces().then(setPlaces, fail);
     const q = new URLSearchParams(location.search);
@@ -108,6 +110,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
       const doc = d.doc as StoredDoc;
       setOriginal({ header: d.header, input, doc });
       setCr(input.crNumber);
+      setPaper(input.paper ?? 'bir');
       setCustomer({ id: input.customerId, name: doc.customerName });
       setTenders(tendersToRows(input.tenders));
       const w = input.withholding;
@@ -191,7 +194,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const errors = [
     ...(customer ? [] : ['Pick the customer.']),
     ...(printed.error ? [printed.error] : []),
-    ...(/^\d+$/.test(crNumber.trim()) ? [] : ['Type the CR number from the booklet (digits only).']),
+    ...(paperNumberError(paper, crNumber, 'Type the CR number from the booklet (digits only).', 'Type the internal receipt number: letters and digits, up to 20.') ?? []),
     ...pay.errors,
     ...(cwtCents === undefined ? ['Type the tax withheld like 250.00'] : cwtCents > 0 && !cwt.atc ? ['Pick the tax code (ATC).'] : []),
     ...(vatWithheldCents === undefined ? ['Type the VAT withheld like 500.00'] : vatWithheldCents > 0 && !cwtCents ? ['VAT withheld comes with tax withheld on the same 2307: type that amount too.'] : []),
@@ -200,6 +203,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const input = {
     customerId: customer?.id ?? '',
     crNumber: crNumber.trim(),
+    ...(paper === 'internal' ? { paper } : {}),
     applications: items.flatMap((i, n) => ('jobOrderId' in i.ref && amounts[n]! > 0 ? [{ jobOrderId: i.ref.jobOrderId, amountCents: amounts[n]! }] : [])),
     ...(items.some((i, n) => 'saleId' in i.ref && amounts[n]! > 0)
       ? { sales: items.flatMap((i, n) => ('saleId' in i.ref && amounts[n]! > 0 ? [{ saleId: i.ref.saleId, amountCents: amounts[n]! }] : [])) }
@@ -296,7 +300,8 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         <Panel title="Where did the money go?">
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" received />
           <Field label="CR number (from the booklet)" required hint={original ? `This collection's CR is ${original.input.crNumber}. Keep it when it is the same paper receipt.` : undefined}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+            <input inputMode={paper === 'bir' ? 'numeric' : 'text'} className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+            <PaperPick what="receipt" paper={paper} onPaper={setPaper} />
           </Field>
           <PrintedDateField label="Date on the CR" value={printed.text} onChange={printed.setText} />
         </Panel>
