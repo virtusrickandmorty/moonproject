@@ -24,6 +24,7 @@ import { draftRoutes } from './engine/documents/drafts.ts';
 import { attachmentRoutes } from './engine/attachments.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
 import { webRoutes } from './platform/web.ts';
+import { websiteDoor, type WebsiteDoor } from './platform/website-door.ts';
 import { practiceRoutes, type PracticeControl } from './platform/practice/routes.ts';
 import { healthRoutes } from './platform/health/routes.ts';
 import { realHost, type Host } from './platform/health/health.ts';
@@ -93,6 +94,8 @@ export interface BuildOptions {
   onRestart?: (reason: string) => void;
   /** This PC's name and addresses for the join address on the System pages (tests give their own). */
   network?: Partial<Network>;
+  /** The website's own door (platform/website-door.ts): which requests came through it, and where the ERP opens. */
+  websiteDoor?: WebsiteDoor;
 }
 
 /** Migrates, registers modules and permissions. Separate from buildApp so tools and tests can use it. */
@@ -141,6 +144,8 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   app.register(cookie);
   app.decorateRequest('user', null);
   publicRequestLimits(app, deps.clock);
+
+  if (opts.websiteDoor) websiteDoor(app, opts.websiteDoor, opts.webRoot ?? WEB_DIST);
 
   // Refuse to start if any route forgot to declare its permission (NR-10).
   app.addHook('onRoute', (route) => {

@@ -8,6 +8,7 @@ import { Button, Dialog, Field, Notice, Panel, inputClass, showDate, useAction }
 import { PICTURE_ACCEPT } from '../../components/pictures.ts';
 import { useLiveReload } from '../../live.ts';
 import { base64, prepare } from '../../shop/Support.tsx';
+import { customerOrigin } from '../../customer-origin.ts';
 
 export interface StaffProof {
   id: string; jobOrderNumber: string; version: number; token: string; note: string | null; sentAt: string; sentBy: string | null; replaced: boolean;
@@ -17,7 +18,7 @@ export interface StaffProof {
 
 const MAX_PDF_BYTES = 5 * 1024 * 1024;
 /** The address the customer opens: the website's, even when staff work on the shop's own network. */
-export const proofUrl = (token: string) => `${/(^|\.)virtusgarments\.com$/.test(location.hostname) ? location.origin : 'https://www.virtusgarments.com'}/p/${token}`;
+export const proofUrl = (token: string) => `${customerOrigin()}/p/${token}`;
 /** A message to paste in Messenger or a text. */
 export const proofMessage = (number: string, version: number, url: string) =>
   `Hi! Here is the design for your order ${number}${version > 1 ? ` (version ${version})` : ''}. Please check the names, numbers, spelling and colours, then tap Approve, or tell us what to change: ${url}`;

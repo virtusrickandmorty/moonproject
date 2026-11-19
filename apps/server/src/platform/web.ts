@@ -22,7 +22,7 @@ export function webRoutes(app: FastifyInstance, root: string): void {
   });
 }
 
-function isFileUnder(root: string, path: string): boolean {
+export function isFileUnder(root: string, path: string): boolean {
   const rel = relative(root, resolve(root, path));
   if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return false;
   try {

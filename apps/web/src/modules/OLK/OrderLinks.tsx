@@ -12,9 +12,10 @@ import { docPath } from '../../shell/menu.ts';
 import { base64, prepare } from '../../shop/Support.tsx';
 import { emptyJo, emptyJoLine, oneOff, type JoValues } from '../JO/forms.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, inputClass, manilaTime, peso, showDate, useAction } from '../../components/ui.tsx';
+import { customerOrigin } from '../../customer-origin.ts';
 
 /** The address customers open: the website's, so the link works from anywhere (not the shop's own network address). */
-export const linkUrl = (token: string) => `${/(^|\.)virtusgarments\.com$/.test(location.hostname) ? location.origin : 'https://www.virtusgarments.com'}/l/${token}`;
+export const linkUrl = (token: string) => `${customerOrigin()}/l/${token}`;
 const inDays = (day: string, n: number) => {
   const [y, m, d] = day.split('-').map(Number) as [number, number, number];
   const t = new Date(Date.UTC(y, m - 1, d + n));

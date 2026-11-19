@@ -8,12 +8,13 @@ import { Button, Loading, Notice, Panel, inputClass, showDate } from '../../comp
 import { Link } from '../../router.tsx';
 import { useLiveReload } from '../../live.ts';
 import { Stars } from './RatingPage.tsx';
+import { customerOrigin } from '../../customer-origin.ts';
 
 export interface FbkRating { stars: number; comment?: string; name?: string; at: string }
 export interface FbkJobOrder { stage: string; token: string | null; rating: FbkRating | null }
 export interface FbkList { from: string; to: string; asked: number; rated: number; average: number | null; rows: { jobOrderNumber: string; jobOrderId: string; customerName: string | null; stars: number; comment: string | null; name: string | null; at: string }[] }
 
-export const ratingUrl = (token: string) => `${/(^|\.)virtusgarments\.com$/.test(location.hostname) ? location.origin : 'https://www.virtusgarments.com'}/r/${token}`;
+export const ratingUrl = (token: string) => `${customerOrigin()}/r/${token}`;
 const message = (number: string, url: string) => `Hi! Thank you for your order ${number}. Would you rate how we did, from 1 to 5 stars? It takes a few seconds: ${url}`;
 
 /** On a job order's page: its rating, or (once released) the link to ask for one. */

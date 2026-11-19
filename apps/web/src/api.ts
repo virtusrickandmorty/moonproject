@@ -4,6 +4,7 @@
  * The CSRF token lives in memory only. Nothing is kept in browser storage (NR-11).
  */
 import type { Issue } from '@moonproject/shared';
+import { isWebsitePage } from '@moonproject/shared';
 
 export class ApiError extends Error {
   constructor(readonly code: string, message: string, readonly status: number, readonly details?: unknown) {
@@ -1233,6 +1234,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     if (res.ok) return data as T;
     const e = new ApiError(data?.code ?? `HTTP_${res.status}`, data?.message ?? 'Something went wrong. Please try again.', res.status, data?.details);
     if (e.code === 'AUTH_REQUIRED' || e.code === 'PASSWORD_CHANGE_REQUIRED') onSignedOut(e);
+    // An ERP screen opened on the website's address (an old tab, a phone's saved icon): the same page on the ERP's own.
+    const erpUrl = e.code === 'ERP_ADDRESS' ? (e.details as { erpUrl?: string } | undefined)?.erpUrl : undefined;
+    if (erpUrl && typeof window !== 'undefined' && !isWebsitePage(window.location.pathname)) window.location.replace(`${erpUrl}${window.location.pathname}${window.location.search}`);
     throw e;
   }
   const keep = <T extends { csrfToken: string }>(r: T) => ((csrf = r.csrfToken), r);

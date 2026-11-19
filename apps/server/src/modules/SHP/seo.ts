@@ -23,6 +23,8 @@ export function shpSeoRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/robots.txt', { config: { permission: 'public' } }, async (req, reply) => {
     reply.type('text/plain; charset=utf-8');
+    // The ERP's own address (erp.virtusgarments.com, the owner's request, Nov 2026) is never listed: the website is on www.
+    if (/^erp\./.test(new URL(siteOf(req)).hostname)) return 'User-agent: *\nDisallow: /\n';
     return [
       'User-agent: *',
       // What the shop pages read to show their products and reviews.

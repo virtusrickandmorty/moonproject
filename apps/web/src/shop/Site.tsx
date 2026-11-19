@@ -16,11 +16,10 @@ import { ChatBubble } from './Assistant.tsx';
 import { MoreSheet, PhoneTabBar, PhoneTopBar } from './Phone.tsx';
 import { SHOP_CONTACT, deliveryWords, type Product } from './products.ts';
 import { ShopProvider, useShop } from './store.tsx';
+import { ORDER_PAGE, SITE_PATHS } from '@moonproject/shared';
 
-/** The addresses this site answers before sign-in; every other one asks staff to sign in. */
-export const SITE_PATHS = ['/', '/shop', '/services', '/about', '/support', '/checkout', '/orders', '/track', '/terms'];
-/** A customer's order page: /order/WEB-000123 (opened with its secret link). */
-const ORDER_PAGE = /^\/order\/([A-Z]+-\d{1,9})$/;
+/** The addresses this site answers before sign-in (shared with the website's door); every other one asks staff to sign in. */
+export { SITE_PATHS };
 /** Whether the website answers this address: for everyone, or (staff) beside the ERP, whose home page is `/`. */
 export const isSitePath = (path: string, staff = false) => (SITE_PATHS.includes(path) && !(staff && path === '/')) || ORDER_PAGE.test(path);
 export type Panel = 'cart' | 'wishlist' | 'sizes' | 'more' | null;
