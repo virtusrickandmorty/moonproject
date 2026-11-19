@@ -35,7 +35,18 @@ import { Toaster } from './components/Toasts.tsx';
 import { useErpTheme } from './theme.ts';
 import { manilaDate } from '@moonproject/shared';
 
-type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
+/** The ERP's address in the website door's refusal (code ERP_ADDRESS), or null for any other error. */
+const erpAddressOf = (e: ApiError) => (e.code === 'ERP_ADDRESS' ? ((e.details as { erpUrl?: string } | undefined)?.erpUrl ?? null) : null);
+
+/** Leaves the website for the same page on the ERP's address (a staff bookmark, "Staff sign in"). */
+function GoTo({ url }: { url: string }) {
+  useEffect(() => window.location.replace(url), [url]);
+  return <Loading size="lg" />;
+}
+
+type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] }
+  // Opened on the website's own address (www, the owner's request, Nov 2026): the website only, the ERP is on its own address.
+  | { kind: 'website'; erpUrl: string };
 
 /** The practice banner sits above everything, the sign-in page included (PLAN C8). */
 export function App() {
@@ -60,7 +71,7 @@ function Stages() {
       setStage((s) => (e.code === 'PASSWORD_CHANGE_REQUIRED' && s.kind === 'ready' ? { ...s, me: { ...s.me, mustChangePassword: true } } : { kind: 'login', message: e.message })),
     );
     (async () => ((await api.setupStatus()).needsFirstOwner ? setStage({ kind: 'firstOwner' }) : await signedIn(await api.me())))().catch((e: ApiError) =>
-      setStage(e.status === 401 ? { kind: 'login' } : { kind: 'error', message: e.message }),
+      setStage(e.status === 401 ? { kind: 'login' } : erpAddressOf(e) ? { kind: 'website', erpUrl: erpAddressOf(e)! } : { kind: 'error', message: e.message }),
     );
   }, [signedIn]);
 
@@ -71,12 +82,13 @@ function Stages() {
   // Rating an order (the owner's request, Nov 2026): the customer's own page too.
   const ratingLink = /^\/r\/([\w-]{20,64})$/.exec(location.split('?')[0]!);
   // Light or dark as the device or the person's menu says, on the ERP's screens only: never the website or an order link.
-  const site = stage.kind === 'login' ? isSitePath(location.split('?')[0]!) : stage.kind === 'ready' && !stage.me.mustChangePassword && isSitePath(location.split('?')[0]!, true);
+  const site = stage.kind === 'website' || stage.kind === 'login' ? isSitePath(location.split('?')[0]!) : stage.kind === 'ready' && !stage.me.mustChangePassword && isSitePath(location.split('?')[0]!, true);
   useErpTheme(!orderLink && !proofLink && !ratingLink && !site);
   if (orderLink) return <OrderLinkPage token={orderLink[1]!} query={location.split('?')[1] ?? ''} />;
   if (proofLink) return <ProofPage token={proofLink[1]!} />;
   if (ratingLink) return <RatingPage token={ratingLink[1]!} />;
   if (stage.kind === 'loading') return <Loading size="lg" />;
+  if (stage.kind === 'website') return isSitePath(location.split('?')[0]!) ? <Site /> : <GoTo url={`${stage.erpUrl}${location}`} />;
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
   if (stage.kind === 'firstOwner') return <FirstOwnerScreen onSignedIn={signedIn} />;
   // Signed out, the home page, services and support make up the public website; any other address (a staff bookmark, an expired session) asks to sign in.

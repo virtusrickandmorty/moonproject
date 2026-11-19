@@ -7,9 +7,12 @@
  *   change or it nears its end.
  *   Practice mode (MOONPROJECT_PRACTICE_PORT, set to 8443 by the installer): a made-up shop for training on that port,
  *   with its own database in data/practice (platform/practice/shop.ts).
+ *   Website door (MOONPROJECT_SITE_PORT, development mode): a second port on 127.0.0.1 for the public website only
+ *   (platform/website-door.ts), where Cloudflare sends www.virtusgarments.com; the ERP keeps PORT, for
+ *   erp.virtusgarments.com (MOONPROJECT_ERP_URL to name another address). Same program, same database.
  */
 import { mkdirSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Server as HttpsServer } from 'node:https';
 import { dirname, join } from 'node:path';
@@ -28,6 +31,7 @@ import { practiceShop, type PracticeShop } from './platform/practice/shop.ts';
 import { nightlyTick } from './modules/AUD/nightly.ts';
 import { isCheckDue, lastSystemCheck, runSystemCheck } from './platform/health/health.ts';
 import { RESTART_EXIT_CODE } from './platform/restart.ts';
+import { ERP_URL } from '@moonproject/shared';
 
 const dbFile = process.env.MOONPROJECT_DB ?? 'data/moonproject.db';
 mkdirSync(dirname(dbFile), { recursive: true });
@@ -69,7 +73,11 @@ if (practicePort) {
   });
 }
 let joinPort: number | null = null;
+// The website's door (the owner's request, Nov 2026): requests through its port are marked here, where no header can fake it.
+const sitePort = lan ? 0 : Number(process.env.MOONPROJECT_SITE_PORT ?? 0);
+const websiteRequests = new WeakSet<IncomingMessage>();
 const { app, deps } = buildApp({
+  ...(sitePort ? { websiteDoor: { isWebsite: (raw: IncomingMessage) => websiteRequests.has(raw), erpUrl: process.env.MOONPROJECT_ERP_URL ?? ERP_URL } } : {}),
   db, clock: systemClock, modules, logger: true, ...(practice ? { practiceShop: practice } : {}),
   ...(tls ? { https: { key: tls.server.keyPem, cert: tls.server.certPem } } : {}),
   network: { joinPort: () => joinPort },
@@ -137,6 +145,14 @@ if (tls) {
   }, 5 * 60_000).unref();
 } else {
   await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT ?? 3000) });
+  if (sitePort) {
+    const site = createServer((req, res) => {
+      websiteRequests.add(req);
+      app.routing(req, res);
+    });
+    site.on('error', (e) => app.log.error(`The website's door (port ${sitePort}): ${e.message}`));
+    site.listen(sitePort, '127.0.0.1', () => app.log.info(`Website only on http://127.0.0.1:${sitePort}`));
+  }
 }
 // After the real shop is up: making the practice shop's data the first time takes a while, in a child process.
 void practice?.start();
