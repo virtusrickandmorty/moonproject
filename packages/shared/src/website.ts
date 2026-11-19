@@ -15,3 +15,6 @@ export const CUSTOMER_LINK = /^\/[lpr]\/[\w-]{20,64}$/;
 
 /** Whether the website's door answers this page (the path without its query). */
 export const isWebsitePage = (path: string) => SITE_PATHS.includes(path) || ORDER_PAGE.test(path) || CUSTOMER_LINK.test(path);
+
+/** Whether a page is open on the ERP's own address (erp.virtusgarments.com): no website before sign-in there. */
+export const isErpHost = (hostname: string) => hostname.toLowerCase() === new URL(ERP_URL).hostname;

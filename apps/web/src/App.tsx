@@ -33,7 +33,7 @@ import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
 import { Site, isSitePath } from './shop/Site.tsx';
 import { Toaster } from './components/Toasts.tsx';
 import { useErpTheme } from './theme.ts';
-import { manilaDate } from '@moonproject/shared';
+import { isErpHost, manilaDate } from '@moonproject/shared';
 
 /** The ERP's address in the website door's refusal (code ERP_ADDRESS), or null for any other error. */
 const erpAddressOf = (e: ApiError) => (e.code === 'ERP_ADDRESS' ? ((e.details as { erpUrl?: string } | undefined)?.erpUrl ?? null) : null);
@@ -82,7 +82,9 @@ function Stages() {
   // Rating an order (the owner's request, Nov 2026): the customer's own page too.
   const ratingLink = /^\/r\/([\w-]{20,64})$/.exec(location.split('?')[0]!);
   // Light or dark as the device or the person's menu says, on the ERP's screens only: never the website or an order link.
-  const site = stage.kind === 'website' || stage.kind === 'login' ? isSitePath(location.split('?')[0]!) : stage.kind === 'ready' && !stage.me.mustChangePassword && isSitePath(location.split('?')[0]!, true);
+  // On the ERP's own address the signed-out pages are the sign-in, never the website (its installed phone app opens there).
+  const erpAddress = isErpHost(window.location.hostname);
+  const site = stage.kind === 'website' || (stage.kind === 'login' && !erpAddress) ? isSitePath(location.split('?')[0]!) : stage.kind === 'ready' && !stage.me.mustChangePassword && isSitePath(location.split('?')[0]!, true);
   useErpTheme(!orderLink && !proofLink && !ratingLink && !site);
   if (orderLink) return <OrderLinkPage token={orderLink[1]!} query={location.split('?')[1] ?? ''} />;
   if (proofLink) return <ProofPage token={proofLink[1]!} />;
@@ -92,7 +94,7 @@ function Stages() {
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
   if (stage.kind === 'firstOwner') return <FirstOwnerScreen onSignedIn={signedIn} />;
   // Signed out, the home page, services and support make up the public website; any other address (a staff bookmark, an expired session) asks to sign in.
-  if (stage.kind === 'login') return isSitePath(location.split('?')[0]!)
+  if (stage.kind === 'login') return isSitePath(location.split('?')[0]!) && !erpAddress
     ? <Site />
     : <LoginScreen message={stage.message} onSignedIn={(me) => { if (location.startsWith('/sign-in')) navigate('/'); return signedIn(me); }} />;
   if (stage.me.mustChangePassword) return <ChangePasswordScreen forced onDone={signedIn} />;
