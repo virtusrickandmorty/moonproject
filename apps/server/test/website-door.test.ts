@@ -26,6 +26,7 @@ beforeAll(async () => {
   writeFileSync(join(dist, 'index.html'), INDEX);
   writeFileSync(join(dist, 'assets', 'app-abc123.js'), 'console.log("app");');
   writeFileSync(join(dist, 'favicon.svg'), '<svg/>');
+  writeFileSync(join(dist, 'site.webmanifest'), JSON.stringify({ id: '/', name: 'Virtus Garments', short_name: 'Virtus', start_url: '/' }));
   ({ app } = buildApp({
     db: openDb(':memory:'), clock: fixedClock('2026-09-28T02:00:00Z'), modules: await loadModules(), config: { scryptN: TEST_SCRYPT_N }, webRoot: dist,
     websiteDoor: { isWebsite: (raw) => raw.headers['x-test-door'] === 'website', erpUrl: ERP },
@@ -89,5 +90,15 @@ describe("the ERP's door", () => {
     expect(r.body).toBe('User-agent: *\nDisallow: /\n');
     const www = await app.inject({ method: 'GET', url: '/robots.txt', headers: { host: 'www.virtusgarments.com' } });
     expect(www.body).toContain('Sitemap: http://www.virtusgarments.com/sitemap.xml');
+  });
+});
+
+describe('the phone app', () => {
+  it('installed from the ERP address it is the ERP app; from the website the website', async () => {
+    const at = (host: string, door = {}) => app.inject({ method: 'GET', url: '/site.webmanifest', headers: { host, ...door } });
+    const erpApp = await at('erp.virtusgarments.com');
+    expect(erpApp.headers['content-type']).toMatch(/^application\/manifest\+json/);
+    expect(erpApp.json()).toMatchObject({ name: 'Virtus ERP', short_name: 'Virtus ERP', start_url: '/' });
+    expect((await at('www.virtusgarments.com', { 'x-test-door': 'website' })).json()).toMatchObject({ name: 'Virtus Garments', short_name: 'Virtus' });
   });
 });

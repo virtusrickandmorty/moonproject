@@ -6,12 +6,22 @@
  */
 import type { FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
-import { AppError } from '@moonproject/shared';
+import { AppError, isErpHost } from '@moonproject/shared';
 
 export function webRoutes(app: FastifyInstance, root: string): void {
   app.register(fastifyStatic, { root, serve: false });
+
+  // The phone app (the owner's request, Nov 2026): installed from the ERP's own address it is the ERP's app, by name too.
+  app.get('/site.webmanifest', { config: { permission: 'public' } }, (req, reply) => {
+    let manifest: Record<string, unknown>;
+    try { manifest = JSON.parse(readFileSync(resolve(root, 'site.webmanifest'), 'utf8')) as Record<string, unknown>; } catch { throw new AppError('NOT_FOUND', 'Not found.', 404); }
+    const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').replace(/:\d+$/, '');
+    if (isErpHost(host)) Object.assign(manifest, { name: 'Virtus ERP', short_name: 'Virtus ERP', description: "Virtus Garments' ERP: job orders, production, the floor app and payroll." });
+    reply.type('application/manifest+json; charset=utf-8').header('cache-control', 'no-cache');
+    return JSON.stringify(manifest);
+  });
 
   app.get('/*', { config: { permission: 'public' } }, (req, reply) => {
     const path = (req.params as { '*': string })['*'];
