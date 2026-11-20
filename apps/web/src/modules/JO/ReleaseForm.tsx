@@ -18,6 +18,7 @@ import { docPath } from '../../shell/menu.ts';
 import { Errors, Figures, useLive } from '../COL/parts.tsx';
 import { AlsoOnInvoice, Booklet, JoPicker } from './parts.tsx';
 import { nothingToCharge, ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, wearerLeft, wearerReady, wearersQty, type ReleaseValues } from './forms.ts';
+import { bookletTyping, switchBooklet } from '@moonproject/shared';
 
 const money = `${inputClass} text-right tabular-nums`;
 /** Ticked to start with: only the lines that may go out now (the owner's request, Oct 2026: what is not ready is greyed). */
@@ -247,8 +248,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         )}
         {free ? <Panel title="Invoice"><p className="text-sm text-slate-600">Nothing to charge on this release, so no invoice is needed.</p></Panel> : <Panel title="Invoice">
           <Field label="Invoice number (from the booklet)" required={!v.invoiceToFollow} hint="VAT sellers write an invoice for every sale.">
-            <input inputMode={v.invoicePaper === 'internal' ? 'text' : 'numeric'} disabled={v.invoiceToFollow} className={`${inputClass} max-w-40`} value={v.invoiceNumber} onChange={(e) => set({ invoiceNumber: e.target.value })} />
-            <PaperPick what="invoice" paper={v.invoicePaper ?? 'bir'} onPaper={(p) => set({ invoicePaper: p })} disabled={v.invoiceToFollow} />
+            <input inputMode="numeric" disabled={v.invoiceToFollow} className={`${inputClass} max-w-40`} value={v.invoiceNumber} onChange={(e) => set({ invoiceNumber: bookletTyping(v.invoicePaper, 'invoice', e.target.value) })} />
+            <PaperPick what="invoice" paper={v.invoicePaper ?? 'bir'} onPaper={(p) => set({ invoicePaper: p, invoiceNumber: switchBooklet(p, 'invoice', v.invoiceNumber) })} disabled={v.invoiceToFollow} />
           </Field>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={v.invoiceToFollow} onChange={(e) => set({ invoiceToFollow: e.target.checked })} />

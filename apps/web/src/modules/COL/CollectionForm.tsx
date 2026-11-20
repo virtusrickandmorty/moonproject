@@ -24,6 +24,7 @@ import { withoutOriginal } from '../../generic/record.tsx';
 import { collectionPreset, paperNumberError } from '../JO/forms.ts';
 import type { WithholdingProfile } from '../CUS/withholding.ts';
 import { WITHHOLDING_CHOICES, cashToReceive, emptyWithholding, paymentGross, withholdingRows, type WithholdingRows } from './withholding.ts';
+import { bookletTyping, switchBooklet } from '@moonproject/shared';
 
 /** Something the customer can pay on; `due` already counts back what the collection being edited paid on it. */
 interface Item { key: string; label: string; date: string; due: number; ref: { jobOrderId: string } | { saleId: string } }
@@ -194,7 +195,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const errors = [
     ...(customer ? [] : ['Pick the customer.']),
     ...(printed.error ? [printed.error] : []),
-    ...(paperNumberError(paper, crNumber, 'Type the CR number from the booklet (digits only).', 'Type the internal receipt number: letters and digits, up to 20.') ?? []),
+    ...(paperNumberError(paper, crNumber, 'Type the CR number from the booklet (digits only).', 'Type the internal receipt number after PR- (digits only).') ?? []),
     ...pay.errors,
     ...(cwtCents === undefined ? ['Type the tax withheld like 250.00'] : cwtCents > 0 && !cwt.atc ? ['Pick the tax code (ATC).'] : []),
     ...(vatWithheldCents === undefined ? ['Type the VAT withheld like 500.00'] : vatWithheldCents > 0 && !cwtCents ? ['VAT withheld comes with tax withheld on the same 2307: type that amount too.'] : []),
@@ -300,8 +301,8 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         <Panel title="Where did the money go?">
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" received />
           <Field label="CR number (from the booklet)" required hint={original ? `This collection's CR is ${original.input.crNumber}. Keep it when it is the same paper receipt.` : undefined}>
-            <input inputMode={paper === 'bir' ? 'numeric' : 'text'} className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
-            <PaperPick what="receipt" paper={paper} onPaper={setPaper} />
+            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(bookletTyping(paper, 'CR', e.target.value))} />
+            <PaperPick what="receipt" paper={paper} onPaper={(p) => { setPaper(p); setCr(switchBooklet(p, 'CR', crNumber)); }} />
           </Field>
           <PrintedDateField label="Date on the CR" value={printed.text} onChange={printed.setText} />
         </Panel>

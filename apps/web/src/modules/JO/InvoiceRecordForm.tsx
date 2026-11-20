@@ -18,6 +18,7 @@ import { AlsoOnInvoice, Booklet, ReleasePicker } from './parts.tsx';
 import { invoiceBooklet, invoiceInput } from './forms.ts';
 import { PaperPick } from '../../components/PaperNumber.tsx';
 import type { Paper } from '@moonproject/shared';
+import { bookletTyping, switchBooklet } from '@moonproject/shared';
 
 type Stored = { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; paper?: Paper; note?: string };
 type Again = { id: string; number: string; invoiceNumber: string };
@@ -102,8 +103,8 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
         <Panel title="Invoice">
           <Field label="Invoice number (from the booklet)" required
             hint={again ? `The number of ${again.number}, kept.` : was ? `Invoice no. ${was} stays with the cancelled record (keep all its copies): write this sale on a new invoice.` : 'Type the number printed on the invoice you wrote.'}>
-            <input inputMode={paper === 'bir' ? 'numeric' : 'text'} className={`${inputClass} max-w-40`} value={invoiceNumber} readOnly={!!again} onChange={(e) => setInvoice(e.target.value)} />
-            <PaperPick what="invoice" paper={paper} onPaper={setPaper} disabled={!!again} />
+            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} readOnly={!!again} onChange={(e) => setInvoice(bookletTyping(paper, 'invoice', e.target.value))} />
+            <PaperPick what="invoice" paper={paper} onPaper={(p) => { setPaper(p); setInvoice(switchBooklet(p, 'invoice', invoiceNumber)); }} disabled={!!again} />
           </Field>
           <PrintedDateField label="Date on the invoice" value={printed.text} onChange={printed.setText} />
           <Field label="Note" required={!!again} hint={again ? 'Why it is recorded again, like "cancelled by mistake".' : undefined}><input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>

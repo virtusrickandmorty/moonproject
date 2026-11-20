@@ -20,6 +20,7 @@ import { docPath } from '../../shell/menu.ts';
 import { cents, checkPlaceIds, emptyTender, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from '../COL/money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS, emptyLine, linesToInput, linesToRows, type LineInput, type LineRow } from './lines.ts';
+import { bookletTyping, switchBooklet } from '@moonproject/shared';
 
 function ConfirmDialog(p: { preview: QsPreview; original?: DocHeader; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
   const key = useMemo(newIdempotencyKey, [p.preview]); // same key when a click is retried, a new one after a new preview (N-02)
@@ -143,9 +144,9 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
     const errors = [
       ...(customer ? [] : ['Pick the customer (or Walk-in).']),
       ...sold.errors,
-      ...(paperNumberError(papers.invoice, invoiceNumber, 'Type the invoice number from the booklet (digits only).', 'Type the internal invoice number: letters and digits, up to 20.') ?? []),
+      ...(paperNumberError(papers.invoice, invoiceNumber, 'Type the invoice number from the booklet (digits only).', 'Type the internal invoice number after IN- (digits only).') ?? []),
       ...pay.errors,
-      ...(paperNumberError(papers.cr, crNumber, 'Type the CR number from the booklet (digits only).', 'Type the internal receipt number: letters and digits, up to 20.') ?? []),
+      ...(paperNumberError(papers.cr, crNumber, 'Type the CR number from the booklet (digits only).', 'Type the internal receipt number after PR- (digits only).') ?? []),
     ];
     const body: QsBody = {
       sale: { customerId: customer?.id ?? '', invoiceNumber: invoiceNumber.trim(), ...(papers.invoice === 'internal' ? { paper: 'internal' as const } : {}), lines: sold.lines, ...(note.trim() ? { note: note.trim() } : {}) },
@@ -224,16 +225,16 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
           <Panel title="Payment: where did the money go?">
             <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" amountHint={sold.totalCents > 0 ? formatPesos(sold.totalCents) : undefined} received />
             <Field label="CR number (from the booklet)" required hint={was.cr ? `CR ${was.cr} stays with the cancelled payment: write this payment on a new CR.` : undefined}>
-              <input inputMode={papers.cr === 'bir' ? 'numeric' : 'text'} className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
-              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => setPapers((p) => ({ ...p, cr }))} />
+              <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(bookletTyping(papers.cr, 'CR', e.target.value))} />
+              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => { setPapers((p) => ({ ...p, cr })); setCr(switchBooklet(cr, 'CR', crNumber)); }} />
             </Field>
           </Panel>
           <Panel title="Invoice">
             <div className="grid gap-3 sm:grid-cols-[17rem_minmax(0,1fr)]">
               <Field label="Invoice number (from the booklet)" required
                 hint={was.invoice ? `Invoice no. ${was.invoice} stays with the cancelled sale (keep all its copies): write this sale on a new invoice.` : 'VAT sellers write an invoice for every sale, however small.'}>
-                <input inputMode={papers.invoice === 'bir' ? 'numeric' : 'text'} className={inputClass} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
-                <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => setPapers((p) => ({ ...p, invoice }))} />
+                <input inputMode="numeric" className={inputClass} value={invoiceNumber} onChange={(e) => setInvoice(bookletTyping(papers.invoice, 'invoice', e.target.value))} />
+                <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => { setPapers((p) => ({ ...p, invoice })); setInvoice(switchBooklet(invoice, 'invoice', invoiceNumber)); }} />
               </Field>
               <Field label="Note"><textarea rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
             </div>

@@ -2,7 +2,7 @@ import type { Paper } from '@moonproject/shared';
 
 /**
  * Which booklet a CR or invoice number typed just above is from (the owner's request, Nov 2026): the BIR one (digits
- * only, checked against the ATP register) or the shop's internal one (letters too). Switching keeps what is typed.
+ * only, checked against the ATP register) or the shop's internal one (IN- or PR- and the number). Switching keeps the digits.
  * It goes after the number's own box in its Field, so the Field's label stays the box's.
  */
 export function PaperPick({ what, paper, onPaper, disabled }: { what: 'receipt' | 'invoice'; paper: Paper; onPaper: (p: Paper) => void; disabled?: boolean }) {
