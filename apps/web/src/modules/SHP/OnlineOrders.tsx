@@ -14,6 +14,7 @@ import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from '../CUS/http.ts';
 import { useLiveReload } from '../../live.ts';
 import { Paged, newestFirst } from '../../components/RowPages.tsx';
+import { bookletTyping, switchBooklet } from '@moonproject/shared';
 
 type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired' | 'returned';
 export const ORDER_STATUS: Record<Status, [string, string]> = {
@@ -172,10 +173,10 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
               <input className={inputClass} value={search} placeholder={customer?.name ?? 'Search a customer'} onChange={(e) => setSearch(e.target.value)} />
               {found.length > 0 && <ul className="mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-md bg-white ring-1 ring-slate-200">{found.map((c) => <li key={c.id}><button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setCustomer({ id: c.id, name: c.display_name }); setSearch(''); setFound([]); }}>{c.display_name}</button></li>)}</ul>}
             </Field>
-            <Field label="Invoice no." required><input className={inputClass} inputMode={papers.invoice === 'bir' ? 'numeric' : 'text'} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
-              <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => setPapers((p) => ({ ...p, invoice }))} /></Field>
-            <Field label="CR no." required><input className={inputClass} inputMode={papers.cr === 'bir' ? 'numeric' : 'text'} value={crNumber} onChange={(e) => setCr(e.target.value)} />
-              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => setPapers((p) => ({ ...p, cr }))} /></Field>
+            <Field label="Invoice no." required><input className={inputClass} inputMode="numeric" value={invoiceNumber} onChange={(e) => setInvoice(bookletTyping(papers.invoice, 'invoice', e.target.value))} />
+              <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => { setPapers((p) => ({ ...p, invoice })); setInvoice(switchBooklet(invoice, 'invoice', invoiceNumber)); }} /></Field>
+            <Field label="CR no." required><input className={inputClass} inputMode="numeric" value={crNumber} onChange={(e) => setCr(bookletTyping(papers.cr, 'CR', e.target.value))} />
+              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => { setPapers((p) => ({ ...p, cr })); setCr(switchBooklet(cr, 'CR', crNumber)); }} /></Field>
           </div>
           <div className="flex gap-2"><Button tone="primary" disabled={busy || !customer || !!paperNumberError(papers.invoice, invoiceNumber, 'x', 'x') || !!paperNumberError(papers.cr, crNumber, 'x', 'x')} onClick={() => void confirm()}>{busy ? 'Recording…' : 'Confirm and record the sale'}</Button><Button onClick={() => setStep('view')}>Back</Button></div>
         </div>

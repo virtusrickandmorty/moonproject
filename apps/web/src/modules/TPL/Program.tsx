@@ -13,6 +13,7 @@ import { Link, navigate } from '../../router.tsx';
 import { fromCents, itemLabel, toCents, type Issue, type TplCardRow, type TplDeliveryPreview, type TplDeliveryRow, type TplItem, type TplProgram, type TplProgramPage } from './types.ts';
 import { useLiveReload } from '../../live.ts';
 import { usePages } from '../../components/RowPages.tsx';
+import { internalTyping, switchBooklet } from '@moonproject/shared';
 
 const STAGE_WORDS: Record<string, string> = { open: 'Not started', in_production: 'In production', ready: 'Finished', partially_released: 'Partly in stock', released: 'All in stock', closed: 'Closed' };
 const pieces = (n: number) => `${n.toLocaleString('en-PH')} ${n === 1 ? 'piece' : 'pieces'}`;
@@ -628,9 +629,9 @@ export function DeliveryEditor({ page, canOverride, onRecorded }: { page: TplPro
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Invoice no. (from the booklet)" required>
-          <input inputMode={f.paper === 'bir' ? 'numeric' : 'text'} className={inputClass} value={f.invoiceNumber}
-            onChange={(e) => edit({ invoiceNumber: f.paper === 'bir' ? e.target.value.replace(/\D/g, '') : e.target.value.slice(0, 20) })} />
-          <PaperPick what="invoice" paper={f.paper} onPaper={(paper) => edit({ paper, ...(paper === 'bir' ? { invoiceNumber: f.invoiceNumber.replace(/\D/g, '') } : {}) })} />
+          <input inputMode="numeric" className={inputClass} value={f.invoiceNumber}
+            onChange={(e) => edit({ invoiceNumber: f.paper === 'bir' ? e.target.value.replace(/\D/g, '') : internalTyping('invoice', e.target.value) })} />
+          <PaperPick what="invoice" paper={f.paper} onPaper={(paper) => edit({ paper, invoiceNumber: switchBooklet(paper, 'invoice', f.invoiceNumber) })} />
         </Field>
         <Field label="Delivery fee" hint="Empty = none"><input inputMode="decimal" className={`${inputClass} text-right tabular-nums`} value={f.fee} onChange={(e) => edit({ fee: e.target.value })} placeholder="0.00" /></Field>
         <Field label="Delivered by" required hint="Our rider, or the courier"><input className={inputClass} maxLength={120} value={f.deliveredBy} onChange={(e) => edit({ deliveredBy: e.target.value })} /></Field>

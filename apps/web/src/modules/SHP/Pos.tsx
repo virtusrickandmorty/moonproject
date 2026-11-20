@@ -17,6 +17,7 @@ import type { Product } from '../../shop/products.ts';
 import { masterRequest } from '../CUS/http.ts';
 import type { StockLine } from './ShopProducts.tsx';
 import { useLiveReload } from '../../live.ts';
+import { bookletTyping, switchBooklet } from '@moonproject/shared';
 
 type Item = Product & { isActive: boolean; stock: StockLine[] | null };
 interface CartLine { product: Item; size: string; colour: string; qty: number }
@@ -78,8 +79,8 @@ export function Pos({ me }: { me: Me }) {
   const problems = [
     ...(cart.length ? [] : ['Add at least one piece.']),
     ...(customer ? [] : ['There is no "Walk-in" customer: add one on the Customers screen, or pick a customer.']),
-    ...(paperNumberError(papers.invoice, invoiceNumber, 'Type the invoice number from the booklet.', 'Type the internal invoice number: letters and digits, up to 20.') ?? []),
-    ...(paperNumberError(papers.cr, crNumber, 'Type the CR number from the booklet.', 'Type the internal receipt number: letters and digits, up to 20.') ?? []),
+    ...(paperNumberError(papers.invoice, invoiceNumber, 'Type the invoice number from the booklet.', 'Type the internal invoice number after IN- (digits only).') ?? []),
+    ...(paperNumberError(papers.cr, crNumber, 'Type the CR number from the booklet.', 'Type the internal receipt number after PR- (digits only).') ?? []),
     ...(placeId ? [] : ['Pick where the money went.']),
     ...(isCash && change < 0 ? ['The cash received is less than the total.'] : []),
   ];
@@ -154,10 +155,10 @@ export function Pos({ me }: { me: Me }) {
           <div className="flex justify-between border-t pt-2 text-lg font-bold"><span>Total</span><span className="tabular-nums">{peso(totalCents)}</span></div>
           <p className="text-xs text-slate-500">Prices include VAT. Customer: <b>{customer?.name ?? '—'}</b></p>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Invoice no." required><input className={inputClass} inputMode={papers.invoice === 'bir' ? 'numeric' : 'text'} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
-              <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => setPapers((p) => ({ ...p, invoice }))} /></Field>
-            <Field label="CR no." required><input className={inputClass} inputMode={papers.cr === 'bir' ? 'numeric' : 'text'} value={crNumber} onChange={(e) => setCr(e.target.value)} />
-              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => setPapers((p) => ({ ...p, cr }))} /></Field>
+            <Field label="Invoice no." required><input className={inputClass} inputMode="numeric" value={invoiceNumber} onChange={(e) => setInvoice(bookletTyping(papers.invoice, 'invoice', e.target.value))} />
+              <PaperPick what="invoice" paper={papers.invoice} onPaper={(invoice) => { setPapers((p) => ({ ...p, invoice })); setInvoice(switchBooklet(invoice, 'invoice', invoiceNumber)); }} /></Field>
+            <Field label="CR no." required><input className={inputClass} inputMode="numeric" value={crNumber} onChange={(e) => setCr(bookletTyping(papers.cr, 'CR', e.target.value))} />
+              <PaperPick what="receipt" paper={papers.cr} onPaper={(cr) => { setPapers((p) => ({ ...p, cr })); setCr(switchBooklet(cr, 'CR', crNumber)); }} /></Field>
           </div>
           <Field label="Paid by" required>
             <select className={inputClass} value={placeId ?? ''} onChange={(e) => setPlaceId(Number(e.target.value) || null)}>

@@ -3,7 +3,7 @@
  * an edit; the buttons on the job order's view; what the collection form starts with for a job order. Pure, so it is
  * tested without a browser; the server works out every figure and checks everything again.
  */
-import { INTERNAL_NUMBER, formatPesos, manilaDate, saysSet, type Paper } from '@moonproject/shared';
+import { formatPesos, manilaDate, saysSet, type Paper } from '@moonproject/shared';
 import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, JoStatusWearer, WearerPick } from '../../api.ts';
 import type { jobOrderPrefill } from '../QUO/quotation.ts';
 import { cents } from '../COL/money.ts';
@@ -297,7 +297,7 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
   if (days && (!/^\d{1,3}$/.test(days) || Number(days) < 1 || Number(days) > 365)) errors.push('Pay within: type the number of days, 1 to 365.');
   const releaseErrors = [...errors];
   const badInvoice = v.invoiceToFollow ? null : paperNumberError(v.invoicePaper, v.invoiceNumber, 'Type the invoice number from the booklet (digits only), or tick "Invoice to follow".',
-    'Type the internal invoice number (letters and digits, up to 20), or tick "Invoice to follow".');
+    'Type the internal invoice number after IN- (digits only), or tick "Invoice to follow".');
   if (badInvoice) errors.push(badInvoice);
   const release: ReleaseInput = {
     jobOrderId: v.jobOrderId,
@@ -316,18 +316,18 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
 /* ---------- Invoice record ---------- */
 
 /**
- * A typed booklet number for its paper (the owner's request, Nov 2026): BIR digits only, as before; internal ones letters
- * too. Null when fine; else the words, `bir` being the BIR wording each form already used.
+ * A typed booklet number for its paper (the owner's request, Nov 2026): BIR digits only, as before; an internal one its
+ * letters (IN- or PR-) and a number. Null when fine; else the words, `bir` being the BIR wording each form already used.
  */
 export function paperNumberError(paper: Paper | undefined, typed: string, bir: string, internal: string): string | null {
-  return paper === 'internal' ? (INTERNAL_NUMBER.test(typed.trim()) ? null : internal) : /^\d+$/.test(typed.trim()) ? null : bir;
+  return paper === 'internal' ? (/^(IN|PR)-[1-9]\d{0,11}$/.test(typed.trim()) ? null : internal) : /^\d+$/.test(typed.trim()) ? null : bir;
 }
 
 /** `also`: earlier releases of the same job order on this invoice too (the owner's request, Nov 2026). */
 export function invoiceInput(v: { releaseId: string; invoiceNumber: string; paper?: Paper; note: string; also?: string[]; againOf?: string }): { input: { releaseId: string; alsoReleaseIds?: string[]; invoiceNumber: string; paper?: 'internal'; note?: string; againOf?: string }; errors: string[] } {
   const errors: string[] = [];
   if (!v.releaseId) errors.push('Pick the release by its number.');
-  const bad = paperNumberError(v.paper, v.invoiceNumber, 'Type the invoice number from the booklet (digits only).', 'Type the internal invoice number: letters and digits, up to 20.');
+  const bad = paperNumberError(v.paper, v.invoiceNumber, 'Type the invoice number from the booklet (digits only).', 'Type the internal invoice number after IN- (digits only).');
   if (bad) errors.push(bad);
   // Recording a cancelled invoice again (cancelled by mistake): it says why.
   if (v.againOf && !v.note.trim()) errors.push('Say why the invoice is recorded again, like "cancelled by mistake".');
