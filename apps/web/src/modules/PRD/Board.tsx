@@ -337,12 +337,14 @@ function LinePanel({ card, cat, can, entryType, startStep = null, onChanged, onC
 /**
  * Send back for rework (the owner's rule, Oct 2026): pieces found needing rework go back to the first step (`stepId`) and
  * through every step again, labelled rework. With a wearer list, tick whose pieces go back (those through the first step
- * and not in rework already); else type how many.
+ * and not in rework already) and, for a wearer with several, how many of theirs (the owner's request, Nov 2026: 2 of
+ * their 8); else type how many.
  */
 function SendBackDialog({ card, stepId, stepName, foundAt, foundName, onDone, onClose }: { card: BoardCard; stepId: number; stepName: string; foundAt: number; foundName: string; onDone: () => Promise<unknown>; onClose: () => void }) {
   const [job, setJob] = useState<PrdJob | null>(null);
   const [part, setPart] = useState<'upper' | 'lower' | undefined>();
   const [ticked, setTicked] = useState<number[]>([]);
+  const [each, setEach] = useState<Record<number, string>>({}); // a ticked wearer's pieces that need rework (blank: all theirs)
   const [pieces, setPieces] = useState('');
   useEffect(() => { api.prdJob(card.jobOrderId).then(setJob, () => setJob(null)); }, [card.jobOrderId]);
   const line = job?.lines.find((l) => l.lineNo === card.lineNo);
@@ -356,10 +358,16 @@ function SendBackDialog({ card, stepId, stepName, foundAt, foundName, onDone, on
   const choosable = (line?.roster ?? []).filter((w) => done.has(w.rowNo) && there.has(w.rowNo) && !back.has(w.rowNo));
   const byWearer = choosable.length > 0;
   const n = Number(pieces);
-  const valid = !(card.isSet && !part) && (byWearer ? ticked.length > 0 : Number.isInteger(n) && n > 0);
+  // Each ticked wearer's pieces: what was typed beside them, or all of theirs.
+  const tickedRows = choosable.filter((w) => ticked.includes(w.rowNo));
+  const piecesOf = (w: (typeof choosable)[number]) => (each[w.rowNo]?.trim() ? Number(each[w.rowNo]) : w.qty);
+  const badWearer = tickedRows.find((w) => { const k = piecesOf(w); return !Number.isInteger(k) || k < 1 || k > w.qty; });
+  const total = tickedRows.reduce((s, w) => s + piecesOf(w), 0);
+  const valid = !(card.isSet && !part) && (byWearer ? ticked.length > 0 && !badWearer : Number.isInteger(n) && n > 0);
+  const wearerPieces = tickedRows.filter((w) => piecesOf(w) < w.qty).map((w) => ({ rowNo: w.rowNo, pieces: piecesOf(w) }));
   const send = (reason: string) => valid
-    ? api.prdRework(card.jobOrderId, card.lineNo, { ...(byWearer ? { wearers: ticked } : { pieces: n }), ...(part ? { part } : {}), reason, foundAtStepId: foundAt }).then(onDone)
-    : Promise.reject(new Error(card.isSet && !part ? 'Pick the upper or the lower part.' : byWearer ? 'Tick the wearers whose pieces need rework.' : 'Type how many pieces need rework.'));
+    ? api.prdRework(card.jobOrderId, card.lineNo, { ...(byWearer ? { wearers: ticked, ...(wearerPieces.length > 0 ? { wearerPieces } : {}) } : { pieces: n }), ...(part ? { part } : {}), reason, foundAtStepId: foundAt }).then(onDone)
+    : Promise.reject(new Error(card.isSet && !part ? 'Pick the upper or the lower part.' : badWearer ? `${badWearer.wearerName} has ${badWearer.qty} pieces: type 1 to ${badWearer.qty}.` : byWearer ? 'Tick the wearers whose pieces need rework.' : 'Type how many pieces need rework.'));
   return (
     <ReasonDialog title={`Send back for rework (found at ${foundName})`} confirmLabel="Send back for rework" onConfirm={send} onClose={onClose}
       explain={`The pieces go back to ${stepName} and through every step again, labelled rework. What was done stays recorded; each step is paid its price list rate for the rework, and the pieces are not released until they are done again.`}>
@@ -367,7 +375,7 @@ function SendBackDialog({ card, stepId, stepName, foundAt, foundName, onDone, on
         <div role="radiogroup" aria-label="Part of the set" className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">Part of the set</span>
           {(['upper', 'lower'] as const).map((p) => (
-            <button key={p} type="button" role="radio" aria-checked={part === p} onClick={() => (setPart(p), setTicked([]))}
+            <button key={p} type="button" role="radio" aria-checked={part === p} onClick={() => (setPart(p), setTicked([]), setEach({}))}
               className={`rounded-full px-3 py-1 text-sm ring-1 ${part === p ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>{p === 'upper' ? 'Upper' : 'Lower'}</button>
           ))}
         </div>
@@ -377,15 +385,21 @@ function SendBackDialog({ card, stepId, stepName, foundAt, foundName, onDone, on
           <legend className="text-sm font-medium">Whose pieces need rework</legend>
           <ul className="grid gap-1 sm:grid-cols-2">
             {choosable.map((w) => (
-              <li key={w.rowNo}>
-                <label className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-white">
+              <li key={w.rowNo} className="flex min-w-0 items-center gap-1">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-sm hover:bg-white">
                   <input type="checkbox" aria-label={`Rework ${w.wearerName}`} checked={ticked.includes(w.rowNo)}
                     onChange={(e) => setTicked(e.target.checked ? [...ticked, w.rowNo] : ticked.filter((x) => x !== w.rowNo))} />
                   <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
                 </label>
+                {/* A wearer with several pieces: how many of theirs need rework (blank: all). */}
+                {w.qty > 1 && ticked.includes(w.rowNo) && (
+                  <input aria-label={`Rework pieces of ${w.wearerName}`} inputMode="numeric" placeholder={String(w.qty)} title={`How many of ${w.wearerName}'s ${w.qty} pieces need rework`}
+                    className={`${inputClass} w-16 shrink-0 text-right`} value={each[w.rowNo] ?? ''} onChange={(e) => setEach({ ...each, [w.rowNo]: e.target.value.replace(/\D/g, '') })} />
+                )}
               </li>
             ))}
           </ul>
+          {tickedRows.length > 0 && <p className="text-xs text-slate-600">{tickedRows.some((w) => w.qty > 1) ? 'Type how many of a wearer\'s pieces need rework; blank sends all of theirs. ' : ''}{badWearer ? '' : `${total} ${total === 1 ? 'piece' : 'pieces'} go back.`}</p>}
           {back.size > 0 && <p className="text-xs text-amber-800">{back.size} already in rework.</p>}
         </fieldset>
       ) : (

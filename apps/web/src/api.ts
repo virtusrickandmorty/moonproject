@@ -394,7 +394,8 @@ export interface NavResult {
   kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee' | 'Supply' | 'Price list item' | 'Shop product' | 'Online order' | 'Owner or officer' | 'Cash account';
   id: string; label: string; detail?: string; href: string;
 }
-export interface PrdRework { pieces: number; wearers: number[]; /** Why they were sent back, where found, when. */ reasons?: { reason: string; foundAt: string; at: string; pieces: number }[] }
+export interface PrdRework { pieces: number; wearers: number[]; /** Why they were sent back, where found, when. */ reasons?: { reason: string; foundAt: string; at: string; pieces: number }[];
+  /** The wearers sent back with only some of their pieces (roster row → pieces); the others, all theirs. */ wearerPieces?: Record<number, number> }
 export interface PrdJob {
   jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
@@ -1467,7 +1468,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/${action}`), reason ? { reason } : {}),
     /** Send pieces back for rework: from the first step through every step again, labelled rework (what was done stays). */
-    prdRework: (jo: string, lineNo: number, body: { pieces?: number; wearers?: number[]; part?: 'upper' | 'lower'; reason: string; foundAtStepId?: number }) =>
+    prdRework: (jo: string, lineNo: number, body: { pieces?: number; wearers?: number[]; wearerPieces?: { rowNo: number; pieces: number }[]; part?: 'upper' | 'lower'; reason: string; foundAtStepId?: number }) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/rework`), body),
     /** What an edit of a job order does to its production: `extra`, work kept as extras (confirmed before Record); `changed`, a warning. */
     prdCarryCheck: (jo: string, lines: unknown[]) => call<{ warnings: { kind: 'extra' | 'changed'; message: string }[] }>('POST', prdJob(jo, '/carry-check'), { lines }),

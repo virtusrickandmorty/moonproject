@@ -241,7 +241,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         const done = wearersDone(ctx.db, jo.id, line.lineNo, step.id, r.part);
         const each = wearerPieces(ctx.db, jo.id, line.lineNo, step.id, r.part);
         // Rework is for a wearer done on this step, or sent back to it; a wearer still to come is not listed.
-        const sentBack = new Set(r.kind === 'rework' ? [...reworkOpen(ctx.db, jo.id, line.lineNo, step.id, r.part).wearers, ...done.keys()] : []);
+        const waiting = r.kind === 'rework' ? reworkOpen(ctx.db, jo.id, line.lineNo, step.id, r.part) : null;
+        const sentBack = new Set(waiting ? [...waiting.wearers, ...done.keys()] : []);
         const forwarded = r.kind === 'work' && route && onRoute ? forwardedWearers(ctx.db, jo.id, line.lineNo, route, step.id, r.part) : null;
         const key = `${line.lineNo}|${r.part}|${r.kind}`;
         const mine = ticked.get(key) ?? new Set<number>();
@@ -267,7 +268,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
             const had = each.get(n);
             add('error', `${f}.wearerPieces`, 'WEARER_PIECES_LEFT', `${at}: ${w.wearerName} has ${had ? `${left} of their ${w.qty} pieces left on ${step.name} (${had.pieces} recorded on ${had.numbers.join(', ')})` : plural(left)}, so at most ${left} of theirs.`);
           }
-          pieces += r.kind === 'work' && !done.has(n) ? typed ?? left : w.qty;
+          // On rework, a wearer sent back with some of their pieces (the owner's request, Nov 2026) counts those.
+          pieces += r.kind === 'work' && !done.has(n) ? typed ?? left : r.kind === 'rework' ? waiting?.wearerPieces?.[n] ?? w.qty : w.qty;
         }
         ticked.set(key, mine);
         // One wearer ticked: part of their pieces left may be recorded (the owner's request, Oct 2026).
