@@ -138,8 +138,11 @@ export function availableFor(route: RouteStep[], stepId: number, lineQty: number
   return Math.min(lineQty, Math.max(0, came));
 }
 
-/** `redone`: the rework pieces the step redid of those that arrived (kept apart from `pieces`, which still wait). */
-export type ReworkOpen = { pieces: number; wearers: number[]; redone?: number; reasons?: ReworkReason[] };
+/**
+ * `redone`: the rework pieces the step redid of those that arrived (kept apart from `pieces`, which still wait).
+ * `wearerPieces`: the waiting wearers sent back with only some of their pieces (roster row → pieces); the others, all theirs.
+ */
+export type ReworkOpen = { pieces: number; wearers: number[]; redone?: number; reasons?: ReworkReason[]; wearerPieces?: Record<number, number> };
 /** Why pieces were sent back (the owner's request, Oct 2026: the rework form shows it): the step it was found at, when, how many. */
 export type ReworkReason = { reason: string; foundAt: string; at: string; pieces: number };
 
@@ -165,8 +168,11 @@ export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: Ro
     const at = needed.findIndex((x) => x.id === r.foundAtId);
     return at < 0 || r.foundCode === 'SEWING' ? needed.length - 1 : at;
   };
-  const wearersOf = db.prepare('SELECT roster_row_no FROM prd_rework_wearers WHERE rework_id = ?').pluck();
-  const sends = sent.map((r) => ({ ...r, last: lastOf(r), wearers: wearersOf.all(r.id) as number[] }));
+  const wearersOf = db.prepare('SELECT roster_row_no AS rowNo, pieces FROM prd_rework_wearers WHERE rework_id = ?');
+  const sends = sent.map((r) => {
+    const named = wearersOf.all(r.id) as { rowNo: number; pieces: number | null }[];
+    return { ...r, last: lastOf(r), wearers: named.map((w) => w.rowNo), some: new Map(named.filter((w) => w.pieces !== null).map((w) => [w.rowNo, w.pieces!])) };
+  });
   const since = sent[0]!.at;
   const redoneOn = db.prepare(`SELECT a.pieces, d.posted_at AS at FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
     WHERE a.jo = ? AND a.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ? ORDER BY d.posted_at, a.row_no`);
@@ -174,8 +180,10 @@ export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: Ro
     WHERE x.jo = ? AND x.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ? GROUP BY x.roster_row_no`);
   // A wearer is redone on a step once ticked there on rework after the last send-back that names them.
   const sentAt = new Map<number, string>();
-  for (const r of sends) for (const n of r.wearers) sentAt.set(n, r.at);
-  const qtyOf = new Map(sends.some((r) => r.wearers.length > 0) ? rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]) : []);
+  // A wearer's pieces in rework: those typed on the last send-back that names them (the owner's request, Nov 2026), else all.
+  const some = new Map<number, number>();
+  for (const r of sends) for (const n of r.wearers) { sentAt.set(n, r.at); if (r.some.has(n)) some.set(n, r.some.get(n)!); else some.delete(n); }
+  const qtyOf = new Map(sends.some((r) => r.wearers.length > 0) ? rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, some.get(w.rowNo) ?? w.qty]) : []);
   // Each send-back's pieces flow apart: each rework recorded on a step redoes pieces sent back before it, first those
   // found at that step (they stop there), then the others, oldest first, which go on to the next step.
   let arriving = sends.map((r) => r.pieces);
@@ -208,7 +216,8 @@ export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: Ro
     const waiting = arrived - redone;
     const wearers = arrivedWearers.filter((w) => !ticked.has(w)).sort((x, y) => x - y);
     const reasons: ReworkReason[] = sends.filter((r, k) => r.last >= i && arriving[k]! > 0).map((r) => ({ reason: r.reason, foundAt: r.foundAt ?? 'a later step', at: r.at, pieces: r.pieces }));
-    out.set(s.id, { pieces: waiting, wearers, redone, ...(waiting > 0 || wearers.length > 0 ? { reasons } : {}) });
+    const partly = wearers.filter((w) => some.has(w));
+    out.set(s.id, { pieces: waiting, wearers, redone, ...(waiting > 0 || wearers.length > 0 ? { reasons } : {}), ...(partly.length > 0 ? { wearerPieces: Object.fromEntries(partly.map((w) => [w, some.get(w)!])) } : {}) });
     arriving = done; // on to the next step: what was redone here of the send-backs that go on
     const goOn = new Set(sends.filter((r) => r.last > i).flatMap((r) => r.wearers));
     arrivedWearers = arrivedWearers.filter((w) => ticked.has(w) && goOn.has(w));
@@ -247,9 +256,11 @@ export function lineFinished(db: Db, jobOrderId: string, lineNo: number, qty: nu
   return Math.min(...parts.map((part) => {
     const c = coverage(db, jobOrderId, lineNo, route, last, part, qty);
     if (c.wearers === null) return Math.max(0, c.pieces - [...reworkFlow(db, jobOrderId, lineNo, route, part).values()].reduce((n, f) => n + f.pieces, 0));
-    const open = new Set([...reworkFlow(db, jobOrderId, lineNo, route, part).values()].flatMap((f) => f.wearers));
+    // A wearer with only some of their pieces in rework has the others through (the owner's request, Nov 2026).
+    const open = new Map([...reworkFlow(db, jobOrderId, lineNo, route, part).values()].flatMap((f) => f.wearers.map((w) => [w, f.wearerPieces?.[w]] as const)));
     const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
-    return Math.min(qty, [...c.wearers].filter((w) => !open.has(w)).reduce((n, w) => n + (roster.get(w) ?? 0), 0) + c.untracked + c.partly);
+    const through = (w: number) => { const all = roster.get(w) ?? 0; return !open.has(w) ? all : Math.max(0, all - (open.get(w) ?? all)); };
+    return Math.min(qty, [...c.wearers].reduce((n, w) => n + through(w), 0) + c.untracked + c.partly);
   }));
 }
 
@@ -293,7 +304,8 @@ export function forwardedWearers(db: Db, jobOrderId: string, lineNo: number, rou
   const prevPieces = part !== 'whole' && prev.parts ? prev.parts[part].pieces : prev.pieces;
   if ([...each.values()].reduce((n, w) => n + w.pieces, 0) < prevPieces) return null;
   const flow = reworkFlow(db, jobOrderId, lineNo, route, part);
-  const back = new Set(route.slice(0, i).flatMap((s) => flow.get(s.id)?.wearers ?? []));
+  // A wearer sent back with only some of their pieces still has the others to go on with (the owner's request, Nov 2026).
+  const back = new Set(route.slice(0, i).flatMap((s) => { const f = flow.get(s.id); return (f?.wearers ?? []).filter((w) => f?.wearerPieces?.[w] === undefined); }));
   return done.filter((w) => !back.has(w)).sort((a, b) => a - b);
 }
 
@@ -466,9 +478,12 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
   return lineRoute(db, jobOrderId, lineNo)!;
 }
 
-/** `wearers`: the wearers sent back (their pieces are then the pieces); `part`: on a set, the upper or the lower part. */
+/**
+ * `wearers`: the wearers sent back (their pieces are then the pieces); `wearerPieces`: of those, the ones with only some of
+ * their pieces sent back (the owner's request, Nov 2026); `part`: on a set, the upper or the lower part.
+ */
 /** `foundAtStepId`: the step where the rework was found; the pieces start again at the first step and are rework up to it (reworkFlow). */
-export interface ReworkRequest { pieces?: number | undefined; wearers?: number[] | undefined; part?: 'upper' | 'lower' | undefined; reason: string; foundAtStepId?: number | undefined }
+export interface ReworkRequest { pieces?: number | undefined; wearers?: number[] | undefined; wearerPieces?: { rowNo: number; pieces: number }[] | undefined; part?: 'upper' | 'lower' | undefined; reason: string; foundAtStepId?: number | undefined }
 
 /**
  * Sends pieces back for rework (the owner's rule, Oct 2026): they start again at the first step of the line and go through
@@ -494,6 +509,10 @@ export function sendBackForRework(db: Db, jobOrderId: string, lineNo: number, re
   const of = part !== 'whole' ? `${part} parts` : 'pieces';
   let pieces = req.pieces ?? 0;
   const wearers = [...new Set(req.wearers ?? [])].sort((a, b) => a - b);
+  const given = new Map((req.wearerPieces ?? []).map((x) => [x.rowNo, x.pieces]));
+  if (given.size !== (req.wearerPieces?.length ?? 0) || [...given.keys()].some((n) => !wearers.includes(n))) {
+    throw new AppError('WEARER_PIECES_ROW', 'Pieces are given for a wearer not ticked, or twice.', 400);
+  }
   if (wearers.length > 0) {
     const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w]));
     const doneHere = wearersDone(db, jobOrderId, lineNo, stepId, part);
@@ -503,7 +522,11 @@ export function sendBackForRework(db: Db, jobOrderId: string, lineNo: number, re
       if (!w) throw new AppError('WEARER', `Line ${lineNo} has no wearer ${n}.`, 400);
       if (!doneHere.has(n)) throw conflict('WEARER_NOT_DONE', `${w.wearerName} is not done on ${step.name} yet, so there is nothing to send back.`);
       if (open.wearers.includes(n)) throw conflict('WEARER_IN_REWORK', `${w.wearerName} is already in rework.`);
-      pieces += w.qty;
+      const some = given.get(n);
+      if (some !== undefined && (!Number.isInteger(some) || some < 1 || some > w.qty)) {
+        throw new AppError('WEARER_PIECES', `${w.wearerName} has ${w.qty} ${w.qty === 1 ? 'piece' : 'pieces'}, so 1 to ${w.qty} of theirs can go back for rework.`, 400);
+      }
+      pieces += some ?? w.qty;
     }
   }
   if (!Number.isInteger(pieces) || pieces < 1) throw new AppError('PIECES', 'Type how many pieces need rework, or tick the wearers.', 400);
@@ -514,8 +537,12 @@ export function sendBackForRework(db: Db, jobOrderId: string, lineNo: number, re
   const foundAt = req.foundAtStepId !== undefined && route.some((s) => s.id === req.foundAtStepId) ? req.foundAtStepId : null;
   const id = newId();
   db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id, found_at_step_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, jobOrderId, lineNo, stepId, part, pieces, why, who.at, who.userId, foundAt);
-  for (const n of wearers) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no) VALUES (?, ?)').run(id, n);
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.rework', entityType: 'jo.job_order', entityId: jobOrderId, data: { id, lineNo, stepId, part, pieces, wearers, reason: why, foundAtStepId: req.foundAtStepId ?? null } });
+  // A wearer's pieces are kept only when fewer than all of theirs (NULL: all).
+  const qty = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
+  const someOf = (n: number) => (given.has(n) && given.get(n)! < (qty.get(n) ?? 0) ? given.get(n)! : null);
+  for (const n of wearers) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no, pieces) VALUES (?, ?, ?)').run(id, n, someOf(n));
+  const partly = wearers.filter((n) => someOf(n) !== null).map((n) => ({ rowNo: n, pieces: someOf(n)! }));
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.rework', entityType: 'jo.job_order', entityId: jobOrderId, data: { id, lineNo, stepId, part, pieces, wearers, ...(partly.length > 0 ? { wearerPieces: partly } : {}), reason: why, foundAtStepId: req.foundAtStepId ?? null } });
   syncStage(db, jobOrderId, `${pieces} ${of} of line ${lineNo} sent back for rework from ${step.name}`, who);
   return lineRoute(db, jobOrderId, lineNo)!;
 }

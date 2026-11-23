@@ -211,9 +211,9 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
     for (const r of reworks) {
       const id = newId();
       db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id, found_at_step_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, newId_, n, r.stepId, r.part, r.pieces, r.reason, r.at, r.userId, r.foundAt);
-      for (const w of db.prepare('SELECT roster_row_no FROM prd_rework_wearers WHERE rework_id = ?').pluck().all(r.id) as number[]) {
-        const nr = newRow.get(w);
-        if (nr !== undefined) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no) VALUES (?, ?)').run(id, nr);
+      for (const w of db.prepare('SELECT roster_row_no AS rowNo, pieces FROM prd_rework_wearers WHERE rework_id = ?').all(r.id) as { rowNo: number; pieces: number | null }[]) {
+        const nr = newRow.get(w.rowNo);
+        if (nr !== undefined) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no, pieces) VALUES (?, ?, ?)').run(id, nr, w.pieces);
       }
     }
     carried.push({ lineNo: n, fromLineNo: o });

@@ -258,3 +258,33 @@ describe('rework recorded before a send-back does not count for it', () => {
     expect((await stepOf(jo, HEATPRESS)).rework).toMatchObject({ pieces: 2, wearers: [1, 4] });
   });
 });
+
+it("sends back only some of a wearer's pieces, and counts those through every step again", async () => {
+  // The owner's request, Nov 2026: Ben has 2 shirts and only 1 needs rework.
+  const jo = await jobOrder();
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5, wearers: [1, 2, 3, 4] }]));
+  expect((await production.post(`/api/prd/jobs/${jo}/lines/1/steps/${SEWING}/complete`, {})).statusCode).toBe(200);
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.packer, pieces: 5, wearers: [1, 2, 3, 4] }], PACKING));
+  expect((await production.post(`/api/prd/jobs/${jo}/lines/1/steps/${PACKING}/complete`, {})).statusCode).toBe(200);
+
+  // More than Ben has, or pieces for a wearer not ticked, are refused.
+  expect((await sendBack(jo, { wearers: [2], wearerPieces: [{ rowNo: 2, pieces: 3 }], reason: 'Seam opened on one shirt' })).json().code).toBe('WEARER_PIECES');
+  expect((await sendBack(jo, { wearers: [2], wearerPieces: [{ rowNo: 1, pieces: 1 }], reason: 'Seam opened on one shirt' })).json().code).toBe('WEARER_PIECES_ROW');
+
+  const sent = await sendBack(jo, { wearers: [2], wearerPieces: [{ rowNo: 2, pieces: 1 }], reason: 'Seam opened on one shirt' });
+  expect(sent.statusCode, sent.body).toBe(200);
+  expect((await stepOf(jo, SEWING)).rework).toMatchObject({ pieces: 1, wearers: [2], wearerPieces: { 2: 1 } });
+  expect(await cardOf(jo)).toMatchObject({ ready: false, finishedPieces: 4 }); // Ben's other shirt is through
+  expect(await readyQty(jo)).toBe(4);
+
+  // Record rework ticking Ben is his 1 piece sent back, not both.
+  expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 2, wearers: [2], ...pasubra }]))).toContain('WEARERS_PIECES');
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1, wearers: [2], ...pasubra }]));
+  expect((await stepOf(jo, SEWING)).rework).toMatchObject({ pieces: 0, wearers: [] });
+  expect((await stepOf(jo, PACKING)).rework).toMatchObject({ pieces: 1, wearers: [2], wearerPieces: { 2: 1 } });
+
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.packer, pieces: 1, wearers: [2], rework: true }], PACKING));
+  expect((await stepOf(jo, PACKING)).rework).toMatchObject({ pieces: 0, wearers: [] });
+  expect(await cardOf(jo)).toMatchObject({ ready: true, finishedPieces: 5 });
+  expect(await readyQty(jo)).toBe(5);
+});

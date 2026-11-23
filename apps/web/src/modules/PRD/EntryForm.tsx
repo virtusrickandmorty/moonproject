@@ -289,6 +289,9 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                       const step = line?.route?.find((x) => x.id === stepId);
                       const part = line?.isSet ? r.part : undefined;
                       const sentBack = (part ? step?.partRework?.[part] : step?.rework)?.wearers ?? [];
+                      // A wearer sent back with some of their pieces (the owner's request, Nov 2026): the rework is those.
+                      const sentSome = (part ? step?.partRework?.[part] : step?.rework)?.wearerPieces ?? {};
+                      const reworkOf = (w: { rowNo: number; qty: number }) => sentSome[w.rowNo] ?? w.qty;
                       const doneHere = part ? step?.partWearersDone?.[part] ?? [] : step?.doneWearers ?? [];
                       const forwarded = r.rework ? sentBack : (part ? step?.partForwarded?.[part] : step?.forwardedWearers) ?? null;
                       if (r.rework && forwarded?.length === 0) return null; // sent back by count, not by wearer: the rework pieces are typed
@@ -302,7 +305,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                       // With several wearers ticked on work, each has a pieces box: the row's pieces add them up (the owner's request, Nov 2026).
                       const several = (next: Set<number>) => !r.rework && next.size > 1;
                       const sum = (next: Set<number>, typed: Record<number, string>) => {
-                        const n = roster.filter((w) => next.has(w.rowNo)).reduce((s, w) => s + (several(next) ? wearerNow(w.qty - (partly[w.rowNo] ?? 0), typed[w.rowNo]) : w.qty - (partly[w.rowNo] ?? 0)), 0);
+                        const n = roster.filter((w) => next.has(w.rowNo)).reduce((s, w) => s + (r.rework ? reworkOf(w) : several(next) ? wearerNow(w.qty - (partly[w.rowNo] ?? 0), typed[w.rowNo]) : w.qty - (partly[w.rowNo] ?? 0)), 0);
                         return Number.isInteger(n) && n > 0 ? String(n) : '';
                       };
                       const tick = (next: Set<number>) => {
@@ -340,7 +343,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                                   <label className={`flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1 text-sm ${isDone || otherRow ? 'text-slate-400' : 'hover:bg-white'}`}>
                                     <input type="checkbox" aria-label={`Row ${i + 1} wearer ${w.wearerName}`} disabled={isDone || !!otherRow} checked={isDone || mine.has(w.rowNo)}
                                       onChange={(e) => { const next = new Set(mine); if (e.target.checked) next.add(w.rowNo); else next.delete(w.rowNo); tick(next); }} />
-                                    <span className="min-w-0 flex-1 break-words">{w.wearerName}<span className="text-slate-500">{w.size ? <> · <span className={`font-semibold ${isDone || otherRow ? '' : 'text-slate-800'}`}>{part === 'lower' && w.lowerSize ? w.lowerSize : part === 'upper' ? w.size : sizeLabel(w.size, w.lowerSize)}</span></> : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
+                                    <span className="min-w-0 flex-1 break-words">{w.wearerName}<span className="text-slate-500">{w.size ? <> · <span className={`font-semibold ${isDone || otherRow ? '' : 'text-slate-800'}`}>{part === 'lower' && w.lowerSize ? w.lowerSize : part === 'upper' ? w.size : sizeLabel(w.size, w.lowerSize)}</span></> : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{r.rework && sentSome[w.rowNo] !== undefined ? ` · ${sentSome[w.rowNo]} of ${w.qty} pcs for rework` : w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
                                     {line?.isSet ? partsDone(w.rowNo).map((p) => <span key={p} className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">{p === 'upper' ? 'Upper' : 'Lower'} ✓</span>)
                                       : isDone && <span className="text-xs">done</span>}
                                     {!isDone && partly[w.rowNo] && <span className="shrink-0 rounded bg-sky-100 px-1 text-xs text-sky-900">{partly[w.rowNo]} of {w.qty} done</span>}

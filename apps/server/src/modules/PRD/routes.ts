@@ -25,6 +25,7 @@ const ACTIONS: Record<string, StepAction> = { complete: 'complete', 'not-needed'
 const reworkBody = z.object({
   pieces: z.number().int().min(1).max(10_000).optional(),
   wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(),
+  wearerPieces: z.array(z.object({ rowNo: z.number().int().min(1).max(1000), pieces: z.number().int().min(1).max(10_000) }).strict()).max(1000).optional(),
   part: z.enum(SET_PARTS).optional(),
   reason: z.string().max(500),
   foundAtStepId: z.number().int().positive().optional(),
